@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weather Data Visualization - Auto Loading</title>
+    <script src='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js'></script>
+    <link href='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css' rel='stylesheet' />
+    <style>
+        body { 
+            margin: 0; 
+            padding: 0; 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            overflow: hidden;
+        }
+        #map { 
+            position: absolute; 
+            top: 0; 
+            bottom: 0; 
+            width: 100%; 
+        }
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 30px 50px;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            z-index: 1000;
+            text-align: center;
+        }
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .control-panel {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: white;
+            border-radius: 10px;
+            padding: 25px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            width: 320px;
+            max-height: calc(100vh - 40px);
+            overflow-y: auto;
+            display: none;
+        }
+        .control-section {
+            margin-bottom: 25px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .control-section:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
+        }
+        .control-title {
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: #1f2937;
+            font-size: 16px;
+        }
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin: 10px 0;
+        }
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 24px;
+        }
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #cbd5e1;
+            transition: .3s;
+            border-radius: 24px;
+        }
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .3s;
+            border-radius: 50%;
+        }
+        input:checked + .toggle-slider {
+            background-color: #3b82f6;
+        }
+        input:checked + .toggle-slider:before {
+            transform: translateX(26px);
+        }
+        .slider-container {
+            margin: 15px 0;
+        }
+        .slider {
+            width: 100%;
+            margin: 8px 0;
+            -webkit-appearance: none;
+            height: 6px;
+            border-radius: 3px;
+            background: #e5e7eb;
+            outline: none;
+        }
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #3b82f6;
+            cursor: pointer;
+        }
+        .slider-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 13px;
+            color: #6b7280;
+            margin-bottom: 5px;
+        }
+        .color-ramp {
+            height: 25px;
+            width: 100%;
+            margin: 12px 0;
+            border-radius: 6px;
+            background: linear-gradient(to right, #0000ff, #00ffff, #00ff00, #ffff00, #ff0000);
+        }
+        .legend-labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            color: #6b7280;
+        }
+        #wind-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+            z-index: 500;
+        }
+        .info-box {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            font-size: 14px;
+            min-width: 250px;
+        }
+        .info-title {
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #1f2937;
+        }
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 5px 0;
+            color: #4b5563;
+        }
+        .coordinates {
+            color: #6b7280;
+            font-size: 12px;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #e5e7eb;
+        }
+        .btn {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            width: 100%;
+            font-size: 14px;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+        .btn:hover {
+            background: #2563eb;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+            margin-left: 10px;
+        }
+        .status-active {
+            background: #d1fae5;
+            color: #065f46;
+        }
+        .status-inactive {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <canvas id="wind-canvas"></canvas>
+    
+    <div id="loading">
+        <div class="spinner"></div>
+        <h3>Loading Weather Data...</h3>
+        <p style="color: #6b7280;">Initializing visualization</p>
+    </div>
+    
+    <div class="control-panel" id="controlPanel">
+        <h3 style="margin-top: 0; display: flex; align-items: center; justify-content: space-between;">
+            Weather Visualization
+            <span class="status-badge status-active">Live</span>
+        </h3>
+        
+        <!-- Temperature Controls -->
+        <div class="control-section" id="tempSection" style="display: none;">
+            <div class="control-title">Temperature Layer</div>
+            <div class="toggle-container">
+                <span>Show Temperature</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="tempToggle" checked onchange="toggleTemperature()">
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+            
+            <div class="slider-container">
+                <div class="slider-label">
+                    <span>Opacity</span>
+                    <span id="tempOpacityValue">80%</span>
+                </div>
+                <input type="range" class="slider" id="tempOpacity" min="0" max="100" value="80" 
+                       oninput="updateTempOpacity(this.value)">
+            </div>
+            
+            <div style="margin-top: 15px;">
+                <div style="font-size: 12px; color: #6b7280; margin-bottom: 8px;">Temperature Scale</div>
+                <div class="color-ramp"></div>
+                <div class="legend-labels">
+                    <span id="tempMin">-10°C</span>
+                    <span>0°C</span>
+                    <span>10°C</span>
+                    <span>20°C</span>
+                    <span id="tempMax">30°C</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Wind Animation Controls -->
+        <div class="control-section" id="windSection" style="display: none;">
+            <div class="control-title">Wind Animation</div>
+            <div class="toggle-container">
+                <span>Show Wind Flow</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="windToggle" checked onchange="toggleWind()">
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+            
+            <div class="slider-container">
+                <div class="slider-label">
+                    <span>Particle Count</span>
+                    <span id="particleCountValue">3000</span>
+                </div>
+                <input type="range" class="slider" id="particleCount" min="1000" max="10000" value="3000" step="500"
+                       oninput="updateParticleCount(this.value)">
+            </div>
+            
+            <div class="slider-container">
+                <div class="slider-label">
+                    <span>Animation Speed</span>
+                    <span id="speedValue">1.0x</span>
+                </div>
+                <input type="range" class="slider" id="animSpeed" min="0.2" max="3" value="1" step="0.1"
+                       oninput="updateAnimationSpeed(this.value)">
+            </div>
+            
+            <div class="slider-container">
+                <div class="slider-label">
+                    <span>Particle Lifetime</span>
+                    <span id="lifetimeValue">100</span>
+                </div>
+                <input type="range" class="slider" id="particleLifetime" min="50" max="200" value="100" step="10"
+                       oninput="updateParticleLifetime(this.value)">
+            </div>
+        </div>
+        
+        <!-- View Controls -->
+        <div class="control-section">
+            <div class="control-title">View Controls</div>
+            <button class="btn" onclick="resetView()" style="margin-bottom: 10px;">Reset View</button>
+            <button class="btn" onclick="toggleAnimation()">
+                <span id="animBtnText">Pause Animation</span>
+            </button>
+        </div>
+    </div>
+    
+    <div class="info-box">
+        <div class="info-title">Weather Data</div>
+        <div id="dataInfo">
+            <div class="info-row">
+                <span>Temperature:</span>
+                <span id="tempValue">--</span>
+            </div>
+            <div class="info-row">
+                <span>Wind Speed:</span>
+                <span id="windSpeed">--</span>
+            </div>
+            <div class="info-row">
+                <span>Wind Direction:</span>
+                <span id="windDir">--</span>
+            </div>
+        </div>
+        <div class="coordinates" id="coordinates">Move cursor over map</div>
+    </div>
+
+    <script>
+        // Get data from server
+        const vizData = {{ viz_data | safe }};
+        const metadata = {{ metadata | safe }};
+        const mapboxToken = '{{ mapbox_token }}';
+        
+        // Initialize Mapbox
+        mapboxgl.accessToken = mapboxToken;
+        
+        let map;
+        let windCanvas, windContext;
+        let particles = [];
+        let animationId = null;
+        let isAnimating = true;
+        let particleCount = 3000;
+        let animationSpeed = 1.0;
+        let particleLifetime = 100;
+        let windData = null;
+        let tempData = null;
+        
+        // Initialize map
+        function initMap() {
+            const bounds = vizData.bounds || {
+                west: -130,
+                east: -65,
+                south: 25,
+                north: 50
+            };
+            
+            const center = [
+                (bounds.west + bounds.east) / 2,
+                (bounds.south + bounds.north) / 2
+            ];
+            
+            map = new mapboxgl.Map({
+                container: 'map',
+                style: 'mapbox://styles/mapbox/dark-v11',
+                center: center,
+                zoom: 4,
+                bounds: [[bounds.west, bounds.south], [bounds.east, bounds.north]]
+            });
+            
+            map.on('load', () => {
+                loadWeatherData();
+            });
+            
+            map.on('mousemove', updateInfoBox);
+        }
+        
+        // Load weather data automatically
+        async function loadWeatherData() {
+            const loadingEl = document.getElementById('loading');
+            loadingEl.querySelector('p').textContent = 'Processing weather data...';
+            
+            try {
+                // Load temperature data if available
+                if (vizData.temperature) {
+                    await loadTemperatureLayer();
+                    document.getElementById('tempSection').style.display = 'block';
+                }
+                
+                // Load wind data if available
+                if (vizData.wind_u && vizData.wind_v) {
+                    await loadWindData();
+                    document.getElementById('windSection').style.display = 'block';
+                    initWindCanvas();
+                    initParticles();
+                    startWindAnimation();
+                }
+                
+                // Hide loading, show controls
+                loadingEl.style.display = 'none';
+                document.getElementById('controlPanel').style.display = 'block';
+                
+                // Fit map to data bounds
+                if (vizData.bounds) {
+                    map.fitBounds([
+                        [vizData.bounds.west, vizData.bounds.south],
+                        [vizData.bounds.east, vizData.bounds.north]
+                    ], { padding: 50 });
+                }
+                
+            } catch (error) {
+                console.error('Error loading weather data:', error);
+                loadingEl.querySelector('h3').textContent = 'Error Loading Data';
+                loadingEl.querySelector('p').textContent = error.message;
+            }
+        }
+        
+        // Load temperature layer
+        async function loadTemperatureLayer() {
+            if (!vizData.temperature) return;
+            
+            const temp = vizData.temperature;
+            const img = new Image();
+            
+            return new Promise((resolve, reject) => {
+                img.onload = () => {
+                    // Create canvas for temperature data
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    const ctx = canvas.getContext('2d');
+                    
+                    // Draw original image
+                    ctx.drawImage(img, 0, 0);
+                    
+                    // Get image data and colorize
+                    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    const data = imageData.data;
+                    
+                    // Create temperature data array
+                    tempData = new Float32Array(canvas.width * canvas.height);
+                    
+                    for (let i = 0; i < data.length; i += 4) {
+                        const value = data[i]; // Grayscale value
+                        const temp = temp.stats.min + (value / 255) * (temp.stats.max - temp.stats.min);
+                        tempData[i / 4] = temp;
+                        
+                        // Apply color gradient
+                        const color = temperatureToColor(temp);
+                        data[i] = color[0];     // R
+                        data[i + 1] = color[1]; // G
+                        data[i + 2] = color[2]; // B
+                        data[i + 3] = 200;      // A
+                    }
+                    
+                    ctx.putImageData(imageData, 0, 0);
+                    
+                    // Add to map
+                    map.addSource('temperature', {
+                        type: 'canvas',
+                        canvas: canvas,
+                        coordinates: [
+                            [temp.bounds.west, temp.bounds.north],
+                            [temp.bounds.east, temp.bounds.north],
+                            [temp.bounds.east, temp.bounds.south],
+                            [temp.bounds.west, temp.bounds.south]
+                        ]
+                    });
+                    
+                    map.addLayer({
+                        id: 'temperature',
+                        type: 'raster',
+                        source: 'temperature',
+                        paint: {
+                            'raster-opacity': 0.8
+                        }
+                    });
+                    
+                    // Update legend
+                    document.getElementById('tempMin').textContent = `${temp.stats.min.toFixed(1)}°C`;
+                    document.getElementById('tempMax').textContent = `${temp.stats.max.toFixed(1)}°C`;
+                    
+                    resolve();
+                };
+                
+                img.onerror = reject;
+                img.src = 'data:image/png;base64,' + temp.data;
+            });
+        }
+        
+        // Load wind data
+        async function loadWindData() {
+            if (!vizData.wind_u || !vizData.wind_v) return;
+            
+            const uImg = new Image();
+            const vImg = new Image();
+            
+            return Promise.all([
+                new Promise((resolve) => {
+                    uImg.onload = resolve;
+                    uImg.src = 'data:image/png;base64,' + vizData.wind_u.data;
+                }),
+                new Promise((resolve) => {
+                    vImg.onload = resolve;
+                    vImg.src = 'data:image/png;base64,' + vizData.wind_v.data;
+                })
+            ]).then(() => {
+                // Create canvases for wind components
+                const uCanvas = document.createElement('canvas');
+                uCanvas.width = uImg.width;
+                uCanvas.height = uImg.height;
+                const uCtx = uCanvas.getContext('2d');
+                uCtx.drawImage(uImg, 0, 0);
+                
+                const vCanvas = document.createElement('canvas');
+                vCanvas.width = vImg.width;
+                vCanvas.height = vImg.height;
+                const vCtx = vCanvas.getContext('2d');
+                vCtx.drawImage(vImg, 0, 0);
+                
+                // Extract wind data
+                const uData = uCtx.getImageData(0, 0, uCanvas.width, uCanvas.height).data;
+                const vData = vCtx.getImageData(0, 0, vCanvas.width, vCanvas.height).data;
+                
+                windData = {
+                    width: uCanvas.width,
+                    height: uCanvas.height,
+                    uData: new Float32Array(uCanvas.width * uCanvas.height),
+                    vData: new Float32Array(vCanvas.width * vCanvas.height),
+                    bounds: vizData.wind_u.bounds,
+                    uStats: vizData.wind_u.stats,
+                    vStats: vizData.wind_v.stats
+                };
+                
+                // Convert pixel values to wind speeds
+                for (let i = 0; i < uData.length; i += 4) {
+                    const idx = i / 4;
+                    windData.uData[idx] = windData.uStats.min + (uData[i] / 255) * (windData.uStats.max - windData.uStats.min);
+                    windData.vData[idx] = windData.vStats.min + (vData[i] / 255) * (windData.vStats.max - windData.vStats.min);
+                }
+            });
+        }
+        
+        // Temperature to color conversion
+        function temperatureToColor(temp) {
+            // Celsius temperature scale
+            const stops = [
+                { temp: -10, color: [0, 0, 255] },      // Blue
+                { temp: 0, color: [0, 255, 255] },      // Cyan
+                { temp: 10, color: [0, 255, 0] },       // Green
+                { temp: 20, color: [255, 255, 0] },     // Yellow
+                { temp: 30, color: [255, 0, 0] }        // Red
+            ];
+            
+            // Find appropriate color range
+            let lower = stops[0];
+            let upper = stops[stops.length - 1];
+            
+            for (let i = 0; i < stops.length - 1; i++) {
+                if (temp >= stops[i].temp && temp <= stops[i + 1].temp) {
+                    lower = stops[i];
+                    upper = stops[i + 1];
+                    break;
+                }
+            }
+            
+            // Interpolate color
+            const ratio = (temp - lower.temp) / (upper.temp - lower.temp);
+            const r = Math.round(lower.color[0] + (upper.color[0] - lower.color[0]) * ratio);
+            const g = Math.round(lower.color[1] + (upper.color[1] - lower.color[1]) * ratio);
+            const b = Math.round(lower.color[2] + (upper.color[2] - lower.color[2]) * ratio);
+            
+            return [r, g, b];
+        }
+        
+        // Initialize wind canvas
+        function initWindCanvas() {
+            windCanvas = document.getElementById('wind-canvas');
+            windContext = windCanvas.getContext('2d');
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+            map.on('move', () => {
+                if (isAnimating && windData) {
+                    updateParticlePositions();
+                }
+            });
+        }
+        
+        function resizeCanvas() {
+            const mapContainer = map.getContainer();
+            windCanvas.width = mapContainer.offsetWidth;
+            windCanvas.height = mapContainer.offsetHeight;
+        }
+        
+        // Initialize particles
+        function initParticles() {
+            particles = [];
+            for (let i = 0; i < particleCount; i++) {
+                particles.push(createParticle());
+            }
+        }
+        
+        // Create particle
+        function createParticle() {
+            return {
+                x: Math.random() * windCanvas.width,
+                y: Math.random() * windCanvas.height,
+                age: Math.random() * particleLifetime,
+                maxAge: particleLifetime,
+                path: []
+            };
+        }
+        
+        // Get wind vector at location
+        function getWindVector(lng, lat) {
+            if (!windData) return { u: 0, v: 0 };
+            
+            const bounds = windData.bounds;
+            const x = (lng - bounds.west) / (bounds.east - bounds.west) * windData.width;
+            const y = (1 - (lat - bounds.south) / (bounds.north - bounds.south)) * windData.height;
+            
+            if (x < 0 || x >= windData.width - 1 || y < 0 || y >= windData.height - 1) {
+                return { u: 0, v: 0 };
+            }
+            
+            const x0 = Math.floor(x);
+            const y0 = Math.floor(y);
+            const x1 = x0 + 1;
+            const y1 = y0 + 1;
+            
+            const fx = x - x0;
+            const fy = y - y0;
+            
+            // Bilinear interpolation
+            const i00 = y0 * windData.width + x0;
+            const i10 = y0 * windData.width + x1;
+            const i01 = y1 * windData.width + x0;
+            const i11 = y1 * windData.width + x1;
+            
+            const u = (1 - fx) * (1 - fy) * windData.uData[i00] +
+                      fx * (1 - fy) * windData.uData[i10] +
+                      (1 - fx) * fy * windData.uData[i01] +
+                      fx * fy * windData.uData[i11];
+            
+            const v = (1 - fx) * (1 - fy) * windData.vData[i00] +
+                      fx * (1 - fy) * windData.vData[i10] +
+                      (1 - fx) * fy * windData.vData[i01] +
+                      fx * fy * windData.vData[i11];
+            
+            return { u: u || 0, v: v || 0 };
+        }
+        
+        // Update particle positions
+        function updateParticlePositions() {
+            particles.forEach(particle => {
+                // Convert screen to geographic coordinates
+                const point = map.unproject([particle.x, particle.y]);
+                
+                // Get wind vector
+                const wind = getWindVector(point.lng, point.lat);
+                const speed = Math.sqrt(wind.u * wind.u + wind.v * wind.v);
+                
+                if (speed > 0) {
+                    // Scale movement based on zoom level and animation speed
+                    const scale = animationSpeed * Math.pow(2, map.getZoom() - 8) * 0.5;
+                    
+                    // Update position
+                    particle.x += wind.u * scale;
+                    particle.y -= wind.v * scale;
+                    
+                    // Add to path
+                    particle.path.push({ x: particle.x, y: particle.y });
+                    if (particle.path.length > 10) {
+                        particle.path.shift();
+                    }
+                }
+                
+                particle.age++;
+                
+                // Reset particle if needed
+                if (particle.x < 0 || particle.x > windCanvas.width ||
+                    particle.y < 0 || particle.y > windCanvas.height ||
+                    particle.age > particle.maxAge) {
+                    Object.assign(particle, createParticle());
+                }
+            });
+        }
+        
+        // Draw particles
+        function drawParticles() {
+            windContext.clearRect(0, 0, windCanvas.width, windCanvas.height);
+            windContext.lineCap = 'round';
+            windContext.lineJoin = 'round';
+            
+            particles.forEach(particle => {
+                if (particle.path.length < 2) return;
+                
+                const opacity = Math.max(0, 1 - (particle.age / particle.maxAge));
+                
+                windContext.beginPath();
+                windContext.moveTo(particle.path[0].x, particle.path[0].y);
+                
+                for (let i = 1; i < particle.path.length; i++) {
+                    windContext.lineTo(particle.path[i].x, particle.path[i].y);
+                }
+                
+                windContext.strokeStyle = `rgba(255, 255, 255, ${opacity * 0.8})`;
+                windContext.lineWidth = 1.5;
+                windContext.stroke();
+            });
+        }
+        
+        // Animation loop
+        function animate() {
+            if (!isAnimating || !windData) return;
+            
+            updateParticlePositions();
+            drawParticles();
+            
+            animationId = requestAnimationFrame(animate);
+        }
+        
+        // Start wind animation
+        function startWindAnimation() {
+            if (!animationId && windData) {
+                animate();
+            }
+        }
+        
+        // Stop wind animation
+        function stopWindAnimation() {
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+                animationId = null;
+            }
+        }
+        
+        // Update info box
+        function updateInfoBox(e) {
+            const coords = `Lat: ${e.lngLat.lat.toFixed(4)}, Lng: ${e.lngLat.lng.toFixed(4)}`;
+            document.getElementById('coordinates').textContent = coords;
+            
+            // Get temperature at location
+            if (tempData && vizData.temperature) {
+                const bounds = vizData.temperature.bounds;
+                const x = Math.floor((e.lngLat.lng - bounds.west) / (bounds.east - bounds.west) * Math.sqrt(tempData.length));
+                const y = Math.floor((1 - (e.lngLat.lat - bounds.south) / (bounds.north - bounds.south)) * Math.sqrt(tempData.length));
+                
+                if (x >= 0 && x < Math.sqrt(tempData.length) && y >= 0 && y < Math.sqrt(tempData.length)) {
+                    const idx = y * Math.sqrt(tempData.length) + x;
+                    const temp = tempData[idx];
+                    document.getElementById('tempValue').textContent = `${temp.toFixed(1)}°C`;
+                }
+            }
+            
+            // Get wind at location
+            if (windData) {
+                const wind = getWindVector(e.lngLat.lng, e.lngLat.lat);
+                const speed = Math.sqrt(wind.u * wind.u + wind.v * wind.v);
+                const direction = Math.atan2(wind.v, wind.u) * 180 / Math.PI;
+                
+                document.getElementById('windSpeed').textContent = `${speed.toFixed(1)} m/s`;
+                document.getElementById('windDir').textContent = `${(direction + 360) % 360}°`;
+            }
+        }
+        
+        // Control functions
+        function toggleTemperature() {
+            const visibility = map.getLayoutProperty('temperature', 'visibility');
+            if (visibility === 'visible' || visibility === undefined) {
+                map.setLayoutProperty('temperature', 'visibility', 'none');
+            } else {
+                map.setLayoutProperty('temperature', 'visibility', 'visible');
+            }
+        }
+        
+        function updateTempOpacity(value) {
+            document.getElementById('tempOpacityValue').textContent = `${value}%`;
+            map.setPaintProperty('temperature', 'raster-opacity', value / 100);
+        }
+        
+        function toggleWind() {
+            const enabled = document.getElementById('windToggle').checked;
+            windCanvas.style.display = enabled ? 'block' : 'none';
+            if (enabled && isAnimating) {
+                startWindAnimation();
+            } else {
+                stopWindAnimation();
+            }
+        }
+        
+        function updateParticleCount(value) {
+            particleCount = parseInt(value);
+            document.getElementById('particleCountValue').textContent = value;
+            initParticles();
+        }
+        
+        function updateAnimationSpeed(value) {
+            animationSpeed = parseFloat(value);
+            document.getElementById('speedValue').textContent = `${value}x`;
+        }
+        
+        function updateParticleLifetime(value) {
+            particleLifetime = parseInt(value);
+            document.getElementById('lifetimeValue').textContent = value;
+            particles.forEach(p => p.maxAge = particleLifetime);
+        }
+        
+        function toggleAnimation() {
+            isAnimating = !isAnimating;
+            document.getElementById('animBtnText').textContent = isAnimating ? 'Pause Animation' : 'Resume Animation';
+            
+            if (isAnimating) {
+                startWindAnimation();
+            } else {
+                stopWindAnimation();
+            }
+        }
+        
+        function resetView() {
+            if (vizData.bounds) {
+                map.fitBounds([
+                    [vizData.bounds.west, vizData.bounds.south],
+                    [vizData.bounds.east, vizData.bounds.north]
+                ], { padding: 50 });
+            }
+        }
+        
+        // Initialize everything
+        initMap();
+    </script>
+</body>
+</html>
