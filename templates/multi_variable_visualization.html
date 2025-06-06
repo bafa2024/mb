@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Variable Weather Visualization</title>
+    <script src='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js'></script>
+    <link href='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css' rel='stylesheet' />
+    <style>
+        body { 
+            margin: 0; 
+            padding: 0; 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        #map { 
+            position: absolute; 
+            top: 0; 
+            bottom: 0; 
+            width: 100%; 
+        }
+        .control-panel {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            width: 320px;
+            max-height: calc(100vh - 40px);
+            overflow-y: auto;
+        }
+        .layer-control {
+            margin-bottom: 20px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .layer-control:last-child {
+            border-bottom: none;
+        }
+        .layer-title {
+            font-weight: 600;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 48px;
+            height: 24px;
+        }
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #cbd5e1;
+            transition: .3s;
+            border-radius: 24px;
+        }
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .3s;
+            border-radius: 50%;
+        }
+        input:checked + .toggle-slider {
+            background-color: #3b82f6;
+        }
+        input:checked + .toggle-slider:before {
+            transform: translateX(24px);
+        }
+        .slider-container {
+            margin: 10px 0;
+        }
+        .slider {
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: #e5e7eb;
+            outline: none;
+            -webkit-appearance: none;
+        }
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #3b82f6;
+            cursor: pointer;
+        }
+        .slider-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: #6b7280;
+            margin-bottom: 5px;
+        }
+        .legend {
+            position: absolute;
+            bottom: 30px;
+            left: 20px;
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .color-ramp {
+            width: 200px;
+            height: 20px;
+            margin: 5px 0;
+            border-radius: 3px;
+        }
+        .legend-labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            color: #6b7280;
+        }
+        #wind-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+            z-index: 100;
+        }
+        .info-panel {
+            position: absolute;
+            bottom: 30px;
+            right: 20px;
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            font-size: 13px;
+        }
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 5px 0;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+        .status-active {
+            background-color: #10b981;
+        }
+        .btn {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            width: 100%;
+            margin-top: 10px;
+        }
+        .btn:hover {
+            background: #2563eb;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <canvas id="wind-canvas"></canvas>
+    
+    <div class="control-panel">
+        <h3 style="margin-top: 0;">Weather Layers</h3>
+        
+        <!-- Temperature Layer Control -->
+        <div class="layer-control" id="tempControl" style="display: none;">
+            <div class="layer-title">
+                <span>🌡️ Temperature</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="tempToggle" checked onchange="toggleLayer('temperature')">
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+            <div class="slider-container">
+                <div class="slider-label">
+                    <span>Opacity</span>
+                    <span id="tempOpacityValue">70%</span>
+                </div>
+                <input type="range" class="slider" id="tempOpacity" min="0" max="100" value="70" 
+                       oninput="updateLayerOpacity('temperature', this.value)">
+            </div>
+            <div class="slider-container">
+                <div class="slider-label">
+                    <span>Color Scheme</span>
+                </div>
+                <select id="tempColorScheme" onchange="updateColorScheme('temperature', this.value)" 
+                        style="width: 100%; padding: 5px; border: 1px solid #e5e7eb; border-radius: 4px;">
+                    <option value="thermal">Thermal</option>
+                    <option value="viridis">Viridis</option>
+                    <option value="plasma">Plasma</option>
+                    <option value="cool">Cool</option>
+                </select>
+            </div>
+        </div>
+        
+        <!-- Wind Layer Control -->
+        <div class="layer-control" id="windControl" style="display: none;">
+            <div class="layer-title">
+                <span>💨 Wind Vectors</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="windToggle" checked onchange="toggleWindAnimation()">
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+            <div class="slider-container">
+                <div class="slider-label">
+                    <span>Particle Count</span>
+                    <span id="particleCountValue">3000</span>
+                </div>
+                <input type="range" class="slider" id="particleCount" min="1000" max="10000" value="3000" step="500"
+                       oninput="updateParticleCount(this.value)">
+            </div>
+            <div class="slider-container">
+                <div class="slider-label">
+                    <span>Animation Speed</span>
+                    <span id="speedValue">1.0x</span>
+                </div>
+                <input type="range" class="slider" id="animSpeed" min="0.2" max="3" value="1" step="0.1"
+                       oninput="updateAnimationSpeed(this.value)">
+            </div>
+            <div class="slider-container">
+                <div class="slider-label">
+                    <span>Trail Length</span>
+                    <span id="trailValue">15</span>
+                </div>
+                <input type="range" class="slider" id="trailLength" min="5" max="50" value="15" step="5"
+                       oninput="updateTrailLength(this.value)">
+            </div>
+        </div>
+        
+        <!-- Additional Scalar Variables -->
+        <div id="additionalLayers"></div>
+        
+        <button class="btn" onclick="resetView()">Reset View</button>
+        <button class="btn" onclick="captureScreenshot()">📸 Screenshot</button>
+    </div>
+    
+    <div class="legend" id="legend" style="display: none;">
+        <div id="legendContent"></div>
+    </div>
+    
+    <div class="info-panel">
+        <div style="font-weight: 600; margin-bottom: 8px;">Data at Cursor</div>
+        <div id="cursorData">
+            <div class="info-row">
+                <span>Move cursor over map</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const MAPBOX_TOKEN = '{{ mapbox_token }}';
+        const TILESET_ID = '{{ tileset_id }}';
+        const RECIPE_DATA = {{ recipe | tojson }};
+        
+        mapboxgl.accessToken = MAPBOX_TOKEN;
+        
+        // Global variables
+        let map;
+        let windCanvas, windContext;
+        let particles = [];
+        let windData = null;
+        let animationId = null;
+        let isAnimating = false;
+        let particleCount = 3000;
+        let animationSpeed = 1.0;
+        let trailLength = 15;
+        
+        // Color schemes
+        const colorSchemes = {
+            thermal: [
+                [0, '#0000ff'],
+                [0.25, '#00ffff'],
+                [0.5, '#00ff00'],
+                [0.75, '#ffff00'],
+                [1, '#ff0000']
+            ],
+            viridis: [
+                [0, '#440154'],
+                [0.25, '#3e4989'],
+                [0.5, '#26828e'],
+                [0.75, '#6dcd59'],
+                [1, '#fde725']
+            ],
+            plasma: [
+                [0, '#0d0887'],
+                [0.25, '#6a00a8'],
+                [0.5, '#b12a90'],
+                [0.75, '#e16462'],
+                [1, '#fca636']
+            ],
+            cool: [
+                [0, '#0000ff'],
+                [0.5, '#00ffff'],
+                [1, '#ffffff']
+            ]
+        };
+        
+        // Initialize map
+        function initMap() {
+            map = new mapboxgl.Map({
+                container: 'map',
+                style: 'mapbox://styles/mapbox/dark-v11',
+                center: [-98, 38], // Center of US
+                zoom: 4
+            });
+            
+            map.on('load', () => {
+                loadTilesetLayers();
+                initWindCanvas();
+            });
+            
+            map.on('mousemove', updateCursorInfo);
+            
+            // Add navigation controls
+            map.addControl(new mapboxgl.NavigationControl());
+            map.addControl(new mapboxgl.ScaleControl({
+                maxWidth: 200,
+                unit: 'metric'
+            }), 'bottom-left');
+        }
+        
+        // Load tileset layers based on recipe
+        function loadTilesetLayers() {
+            if (!RECIPE_DATA.layers || !RECIPE_DATA.layers.default) {
+                console.error('Invalid recipe data');
+                return;
+            }
+            
+            const bands = RECIPE_DATA.layers.default.raster_array?.bands || {};
+            const metadata = RECIPE_DATA.metadata || {};
+            
+            // Add the raster source
+            map.addSource('weather-data', {
+                type: 'raster',
+                url: `mapbox://${TILESET_ID}`,
+                tileSize: 512
+            });
+            
+            // Process each band
+            let hasTemperature = false;
+            let hasWind = false;
+            const scalarLayers = [];
+            
+            Object.entries(bands).forEach(([bandName, bandConfig]) => {
+                const bandInfo = metadata.all_bands?.[bandName] || {};
+                
+                if (bandInfo.type === 'scalar') {
+                    if (bandName.includes('temp') || bandName.includes('t2m')) {
+                        hasTemperature = true;
+                        addTemperatureLayer(bandName, bandInfo);
+                    } else {
+                        scalarLayers.push({ name: bandName, info: bandInfo });
+                    }
+                } else if (bandInfo.type === 'vector_u' || bandInfo.type === 'vector_v') {
+                    hasWind = true;
+                }
+            });
+            
+            // Show controls
+            if (hasTemperature) {
+                document.getElementById('tempControl').style.display = 'block';
+            }
+            if (hasWind) {
+                document.getElementById('windControl').style.display = 'block';
+                loadWindData();
+            }
+            
+            // Add other scalar layers
+            if (scalarLayers.length > 0) {
+                addScalarLayerControls(scalarLayers);
+            }
+            
+            // Show legend
+            updateLegend();
+        }
+        
+        // Add temperature layer
+        function addTemperatureLayer(bandName, bandInfo) {
+            map.addLayer({
+                id: 'temperature',
+                type: 'raster',
+                source: 'weather-data',
+                paint: {
+                    'raster-opacity': 0.7,
+                    'raster-color': createColorExpression('thermal', bandInfo.stats)
+                }
+            });
+        }
+        
+        // Create color expression for raster
+        function createColorExpression(scheme, stats) {
+            const colors = colorSchemes[scheme];
+            const min = stats.min;
+            const max = stats.max;
+            const range = max - min;
+            
+            const stops = colors.map(([position, color]) => {
+                return [min + position * range, color];
+            });
+            
+            return [
+                'interpolate',
+                ['linear'],
+                ['raster-value'],
+                ...stops.flat()
+            ];
+        }
+        
+        // Initialize wind canvas
+        function initWindCanvas() {
+            windCanvas = document.getElementById('wind-canvas');
+            windContext = windCanvas.getContext('2d');
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+        }
+        
+        function resizeCanvas() {
+            const mapContainer = map.getContainer();
+            windCanvas.width = mapContainer.offsetWidth;
+            windCanvas.height = mapContainer.offsetHeight;
+        }
+        
+        // Load wind data from tileset
+        async function loadWindData() {
+            // In a real implementation, you would fetch the actual wind data
+            // from the tileset using the Mapbox API or a custom endpoint
+            // For now, we'll simulate this
+            
+            const vectorPairs = RECIPE_DATA.metadata?.vector_pairs || [];
+            if (vectorPairs.length > 0) {
+                // Initialize particles for wind animation
+                initParticles();
+                startWindAnimation();
+            }
+        }
+        
+        // Particle system for wind animation
+        function initParticles() {
+            particles = [];
+            for (let i = 0; i < particleCount; i++) {
+                particles.push(createParticle());
+            }
+        }
+        
+        function createParticle() {
+            return {
+                x: Math.random() * windCanvas.width,
+                y: Math.random() * windCanvas.height,
+                age: Math.random() * 100,
+                path: []
+            };
+        }
+        
+        function updateParticles() {
+            particles.forEach(particle => {
+                // Get geographic coordinates
+                const point = map.unproject([particle.x, particle.y]);
+                
+                // Simulate wind vector (in real implementation, query from tileset)
+                const u = Math.sin(point.lng * 0.1) * 10;
+                const v = Math.cos(point.lat * 0.1) * 10;
+                
+                // Update position
+                particle.x += u * animationSpeed * 0.5;
+                particle.y -= v * animationSpeed * 0.5;
+                
+                // Add to path
+                particle.path.push({ x: particle.x, y: particle.y });
+                if (particle.path.length > trailLength) {
+                    particle.path.shift();
+                }
+                
+                particle.age++;
+                
+                // Reset if needed
+                if (particle.x < 0 || particle.x > windCanvas.width ||
+                    particle.y < 0 || particle.y > windCanvas.height ||
+                    particle.age > 100) {
+                    Object.assign(particle, createParticle());
+                }
+            });
+        }
+        
+        function drawParticles() {
+            windContext.clearRect(0, 0, windCanvas.width, windCanvas.height);
+            windContext.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+            windContext.lineWidth = 1.5;
+            
+            particles.forEach(particle => {
+                if (particle.path.length < 2) return;
+                
+                windContext.beginPath();
+                windContext.moveTo(particle.path[0].x, particle.path[0].y);
+                
+                for (let i = 1; i < particle.path.length; i++) {
+                    const alpha = i / particle.path.length;
+                    windContext.globalAlpha = alpha * 0.8;
+                    windContext.lineTo(particle.path[i].x, particle.path[i].y);
+                }
+                
+                windContext.stroke();
+            });
+            
+            windContext.globalAlpha = 1;
+        }
+        
+        function animate() {
+            if (!isAnimating) return;
+            
+            updateParticles();
+            drawParticles();
+            animationId = requestAnimationFrame(animate);
+        }
+        
+        function startWindAnimation() {
+            isAnimating = true;
+            animate();
+        }
+        
+        function stopWindAnimation() {
+            isAnimating = false;
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+                animationId = null;
+            }
+            windContext.clearRect(0, 0, windCanvas.width, windCanvas.height);
+        }
+        
+        // Control functions
+        function toggleLayer(layerId) {
+            const visibility = map.getLayoutProperty(layerId, 'visibility');
+            if (visibility === 'visible' || visibility === undefined) {
+                map.setLayoutProperty(layerId, 'visibility', 'none');
+            } else {
+                map.setLayoutProperty(layerId, 'visibility', 'visible');
+            }
+            updateLegend();
+        }
+        
+        function toggleWindAnimation() {
+            const enabled = document.getElementById('windToggle').checked;
+            windCanvas.style.display = enabled ? 'block' : 'none';
+            if (enabled) {
+                startWindAnimation();
+            } else {
+                stopWindAnimation();
+            }
+        }
+        
+        function updateLayerOpacity(layerId, value) {
+            document.getElementById(`${layerId.slice(0, 4)}OpacityValue`).textContent = `${value}%`;
+            map.setPaintProperty(layerId, 'raster-opacity', value / 100);
+        }
+        
+        function updateColorScheme(layerId, scheme) {
+            // Update the color ramp for the layer
+            const bandInfo = RECIPE_DATA.metadata?.all_bands?.[layerId] || { stats: { min: 0, max: 100 } };
+            map.setPaintProperty(layerId, 'raster-color', createColorExpression(scheme, bandInfo.stats));
+            updateLegend();
+        }
+        
+        function updateParticleCount(value) {
+            particleCount = parseInt(value);
+            document.getElementById('particleCountValue').textContent = value;
+            initParticles();
+        }
+        
+        function updateAnimationSpeed(value) {
+            animationSpeed = parseFloat(value);
+            document.getElementById('speedValue').textContent = `${value}x`;
+        }
+        
+        function updateTrailLength(value) {
+            trailLength = parseInt(value);
+            document.getElementById('trailValue').textContent = value;
+        }
+        
+        function updateCursorInfo(e) {
+            const coords = e.lngLat;
+            let html = '<div class="info-row"><span>Coordinates:</span><span>' + 
+                      coords.lat.toFixed(4) + ', ' + coords.lng.toFixed(4) + '</span></div>';
+            
+            // In real implementation, query raster values at cursor position
+            // For now, show simulated values
+            if (map.getLayoutProperty('temperature', 'visibility') === 'visible') {
+                const temp = 20 + Math.sin(coords.lng * 0.1) * 10;
+                html += '<div class="info-row"><span>Temperature:</span><span>' + 
+                       temp.toFixed(1) + '°C</span></div>';
+            }
+            
+            if (isAnimating) {
+                const windSpeed = Math.abs(Math.sin(coords.lng * 0.1) * 10) + 
+                                 Math.abs(Math.cos(coords.lat * 0.1) * 10);
+                html += '<div class="info-row"><span>Wind Speed:</span><span>' + 
+                       windSpeed.toFixed(1) + ' m/s</span></div>';
+            }
+            
+            document.getElementById('cursorData').innerHTML = html;
+        }
+        
+        function updateLegend() {
+            const legend = document.getElementById('legend');
+            const content = document.getElementById('legendContent');
+            let html = '';
+            
+            if (map.getLayoutProperty('temperature', 'visibility') === 'visible') {
+                const scheme = document.getElementById('tempColorScheme').value;
+                html += '<div style="margin-bottom: 10px;"><strong>Temperature (°C)</strong></div>';
+                html += '<div class="color-ramp" style="background: linear-gradient(to right, ' +
+                       colorSchemes[scheme].map(([_, color]) => color).join(', ') + ');"></div>';
+                html += '<div class="legend-labels"><span>Cold</span><span>Hot</span></div>';
+            }
+            
+            if (html) {
+                content.innerHTML = html;
+                legend.style.display = 'block';
+            } else {
+                legend.style.display = 'none';
+            }
+        }
+        
+        function addScalarLayerControls(layers) {
+            const container = document.getElementById('additionalLayers');
+            
+            layers.forEach(({ name, info }) => {
+                const control = document.createElement('div');
+                control.className = 'layer-control';
+                control.innerHTML = `
+                    <div class="layer-title">
+                        <span>📊 ${name}</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="${name}Toggle" onchange="toggleLayer('${name}')">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="slider-container">
+                        <div class="slider-label">
+                            <span>Opacity</span>
+                            <span id="${name}OpacityValue">70%</span>
+                        </div>
+                        <input type="range" class="slider" id="${name}Opacity" min="0" max="100" value="70" 
+                               oninput="updateLayerOpacity('${name}', this.value)">
+                    </div>
+                `;
+                container.appendChild(control);
+                
+                // Add the layer to map (initially hidden)
+                map.addLayer({
+                    id: name,
+                    type: 'raster',
+                    source: 'weather-data',
+                    paint: {
+                        'raster-opacity': 0.7,
+                        'raster-color': createColorExpression('viridis', info.stats)
+                    },
+                    layout: {
+                        'visibility': 'none'
+                    }
+                });
+            });
+        }
+        
+        function resetView() {
+            map.flyTo({
+                center: [-98, 38],
+                zoom: 4,
+                duration: 1500
+            });
+        }
+        
+        function captureScreenshot() {
+            // Capture map canvas
+            const mapCanvas = map.getCanvas();
+            const dataURL = mapCanvas.toDataURL('image/png');
+            
+            // Create download link
+            const link = document.createElement('a');
+            link.download = `weather_visualization_${Date.now()}.png`;
+            link.href = dataURL;
+            link.click();
+        }
+        
+        // Initialize everything
+        initMap();
+    </script>
+</body>
+</html>

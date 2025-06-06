@@ -15,6 +15,9 @@ from typing import Optional, Dict, List
 import tempfile
 import traceback
 from pathlib import Path
+import base64
+import io
+from PIL import Image
 
 app = FastAPI()
 
@@ -39,9 +42,10 @@ TEMP_DIR.mkdir(exist_ok=True)
 async def root(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
-def create_recipe_for_netcdf(nc_path: str, tileset_id: str) -> Dict:
+def create_recipe_for_netcdf(nc_path: str, tileset_id: str, username: str) -> Dict:
     """
-    Create a Mapbox recipe for NetCDF data with vector and scalar fields.
+    Create a Mapbox recipe for NetCDF data with RasterArray format.
+    Supports both vector fields (u/v components) and scalar fields.
     """
     try:
         ds = xr.open_dataset(nc_path)
@@ -49,6 +53,8 @@ def create_recipe_for_netcdf(nc_path: str, tileset_id: str) -> Dict:
         # Identify variables and their types
         scalar_vars = []
         vector_pairs = []
+        all_bands = {}
+        band_index = 0
         
         # Common vector component patterns
         vector_patterns = [
@@ -57,121 +63,129 @@ def create_recipe_for_netcdf(nc_path: str, tileset_id: str) -> Dict:
             ('u_wind', 'v_wind'),
             ('uwind', 'vwind'),
             ('water_u', 'water_v'),  # ocean currents
+            ('eastward_wind', 'northward_wind'),
         ]
         
         # Check for vector pairs
         var_names = list(ds.data_vars)
+        processed_vars = set()
+        
         for u_pattern, v_pattern in vector_patterns:
-            u_vars = [v for v in var_names if u_pattern in v.lower()]
-            v_vars = [v for v in var_names if v_pattern in v.lower()]
+            u_matches = [v for v in var_names if u_pattern in v.lower() and v not in processed_vars]
+            v_matches = [v for v in var_names if v_pattern in v.lower() and v not in processed_vars]
             
-            if u_vars and v_vars:
+            if u_matches and v_matches:
+                u_var = u_matches[0]
+                v_var = v_matches[0]
                 vector_pairs.append({
-                    'u': u_vars[0],
-                    'v': v_vars[0],
-                    'name': 'wind' if 'wind' in u_vars[0].lower() else 'flow'
+                    'u': u_var,
+                    'v': v_var,
+                    'name': 'wind' if 'wind' in u_var.lower() else 'flow'
                 })
+                processed_vars.add(u_var)
+                processed_vars.add(v_var)
         
         # All other variables are scalar
-        vector_components = []
-        for pair in vector_pairs:
-            vector_components.extend([pair['u'], pair['v']])
+        scalar_vars = [v for v in var_names if v not in processed_vars]
         
-        scalar_vars = [v for v in var_names if v not in vector_components]
-        
-        # Build the recipe
+        # Build the RasterArray recipe
         recipe = {
             "version": 1,
-            "layers": {}
-        }
-        
-        # Add vector layers
-        for i, vector_pair in enumerate(vector_pairs):
-            layer_name = f"{vector_pair['name']}_{i}"
-            recipe["layers"][layer_name] = {
-                "source": f"mapbox://tileset-source/{MAPBOX_USERNAME}/{tileset_id}",
-                "minzoom": 0,
-                "maxzoom": 12,
-                "features": {
-                    "attributes": {
-                        "allowed_output": [
-                            vector_pair['u'],
-                            vector_pair['v'],
-                            "speed",
-                            "direction"
-                        ],
-                        "set": {
-                            "speed": [
-                                "case",
-                                ["all", 
-                                    ["has", vector_pair['u']], 
-                                    ["has", vector_pair['v']]
-                                ],
-                                ["sqrt", 
-                                    ["+", 
-                                        ["^", ["get", vector_pair['u']], 2],
-                                        ["^", ["get", vector_pair['v']], 2]
-                                    ]
-                                ],
-                                None
-                            ],
-                            "direction": [
-                                "case",
-                                ["all", 
-                                    ["has", vector_pair['u']], 
-                                    ["has", vector_pair['v']]
-                                ],
-                                ["*", 180, ["/", ["atan2", ["get", vector_pair['v']], ["get", vector_pair['u']]], 3.14159]],
-                                None
-                            ]
-                        }
+            "layers": {
+                "default": {
+                    "source": f"mapbox://tileset-source/{username}/{tileset_id}",
+                    "minzoom": 0,
+                    "maxzoom": 14,
+                    "raster_array": {
+                        "bands": {}
                     }
                 }
             }
+        }
         
-        # Add scalar layers
-        for scalar_var in scalar_vars:
-            # Clean variable name for layer name
-            layer_name = re.sub(r'[^a-zA-Z0-9_]', '_', scalar_var.lower())
+        # Add all variables as bands
+        band_mapping = {}
+        
+        # First add vector components
+        for vector_pair in vector_pairs:
+            # U component
+            band_index += 1
+            band_name = f"{vector_pair['name']}_u"
+            recipe["layers"]["default"]["raster_array"]["bands"][band_name] = {
+                "band": band_index,
+                "source_band": vector_pair['u']
+            }
+            band_mapping[vector_pair['u']] = band_name
+            all_bands[band_name] = {
+                "source": vector_pair['u'],
+                "type": "vector_u",
+                "stats": {
+                    "min": float(ds[vector_pair['u']].min().values),
+                    "max": float(ds[vector_pair['u']].max().values)
+                }
+            }
             
-            recipe["layers"][layer_name] = {
-                "source": f"mapbox://tileset-source/{MAPBOX_USERNAME}/{tileset_id}",
-                "minzoom": 0,
-                "maxzoom": 12,
-                "features": {
-                    "attributes": {
-                        "allowed_output": [scalar_var]
-                    }
+            # V component
+            band_index += 1
+            band_name = f"{vector_pair['name']}_v"
+            recipe["layers"]["default"]["raster_array"]["bands"][band_name] = {
+                "band": band_index,
+                "source_band": vector_pair['v']
+            }
+            band_mapping[vector_pair['v']] = band_name
+            all_bands[band_name] = {
+                "source": vector_pair['v'],
+                "type": "vector_v",
+                "stats": {
+                    "min": float(ds[vector_pair['v']].min().values),
+                    "max": float(ds[vector_pair['v']].max().values)
+                }
+            }
+        
+        # Then add scalar variables
+        for scalar_var in scalar_vars:
+            band_index += 1
+            # Clean variable name for band name
+            band_name = re.sub(r'[^a-zA-Z0-9_]', '_', scalar_var.lower())
+            
+            recipe["layers"]["default"]["raster_array"]["bands"][band_name] = {
+                "band": band_index,
+                "source_band": scalar_var
+            }
+            band_mapping[scalar_var] = band_name
+            all_bands[band_name] = {
+                "source": scalar_var,
+                "type": "scalar",
+                "stats": {
+                    "min": float(ds[scalar_var].min().values),
+                    "max": float(ds[scalar_var].max().values)
                 }
             }
         
         # Add tile configuration
-        recipe["tiles"] = {
-            "raster_array": {
-                "resampling": "bilinear",
-                "overviews": [2, 4, 8, 16, 32],
-                "pixel_type": "float32",
-                "bands": {}
-            }
+        recipe["layers"]["default"]["tiles"] = {
+            "buffer_size": 1,
+            "tile_size": 512,
+            "filter": ["all"],
+            "resampling": "bilinear"
         }
         
-        # Configure bands for all variables
-        all_vars = scalar_vars + vector_components
-        for i, var in enumerate(all_vars):
-            recipe["tiles"]["raster_array"]["bands"][var] = {
-                "band_index": i + 1,
-                "source_band": var,
-                "statistics": {
-                    "minimum": float(ds[var].min().values) if var in ds else -9999,
-                    "maximum": float(ds[var].max().values) if var in ds else 9999
-                }
-            }
+        # Add metadata for easier reference
+        recipe["metadata"] = {
+            "band_mapping": band_mapping,
+            "vector_pairs": vector_pairs,
+            "scalar_variables": scalar_vars,
+            "all_bands": all_bands,
+            "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "source_file": os.path.basename(nc_path)
+        }
         
-        ds.close()  # Close the dataset
+        ds.close()
         return recipe
         
     except Exception as e:
         print(f"Error creating recipe: {str(e)}")
+        traceback.print_exc()
         raise
 
 def prepare_netcdf_for_mapbox(nc_path: str, output_path: str) -> Dict:
@@ -242,6 +256,111 @@ def prepare_netcdf_for_mapbox(nc_path: str, output_path: str) -> Dict:
     except Exception as e:
         print(f"Error preparing NetCDF: {str(e)}")
         raise
+
+def prepare_netcdf_for_mapbox_advanced(ds: xr.Dataset, output_path: str):
+    """
+    Advanced preparation of NetCDF for Mapbox with proper coordinate handling
+    """
+    # Ensure proper coordinate names and CRS
+    coord_mapping = {
+        'longitude': ['lon', 'long', 'x', 'LON', 'LONGITUDE'],
+        'latitude': ['lat', 'y', 'LAT', 'LATITUDE'],
+        'time': ['time', 'TIME', 't', 'datetime', 'DATE']
+    }
+    
+    for standard_name, alternatives in coord_mapping.items():
+        for alt in alternatives:
+            if alt in ds.dims or alt in ds.coords:
+                if alt != standard_name:
+                    ds = ds.rename({alt: standard_name})
+                break
+    
+    # Ensure all variables have proper CRS
+    for var in ds.data_vars:
+        if 'longitude' in ds[var].dims and 'latitude' in ds[var].dims:
+            try:
+                ds[var].rio.write_crs("EPSG:4326", inplace=True)
+                ds[var].rio.set_spatial_dims(x_dim="longitude", y_dim="latitude", inplace=True)
+            except Exception as e:
+                print(f"Warning: Could not set CRS for {var}: {e}")
+    
+    # Handle time dimension if present
+    if 'time' in ds.dims and len(ds.time) > 1:
+        # For now, select first time step
+        # In production, you might want to create separate bands for each time
+        ds = ds.isel(time=0)
+    
+    # Save with proper encoding
+    encoding = {}
+    for var in ds.data_vars:
+        encoding[var] = {
+            'dtype': 'float32',
+            'scale_factor': 0.01,
+            'add_offset': 0,
+            '_FillValue': -9999
+        }
+    
+    ds.to_netcdf(output_path, encoding=encoding)
+
+def generate_preview_images(ds: xr.Dataset) -> Dict:
+    """
+    Generate base64-encoded preview images for visualization
+    """
+    preview_data = {}
+    
+    try:
+        # Generate previews for first few variables
+        for var in list(ds.data_vars)[:3]:
+            da = ds[var]
+            
+            # Handle time dimension
+            if 'time' in da.dims:
+                da = da.isel(time=0)
+            
+            # Convert to numpy array
+            data = da.values
+            
+            # Normalize to 0-255
+            data_min = np.nanmin(data)
+            data_max = np.nanmax(data)
+            if data_max > data_min:
+                normalized = ((data - data_min) / (data_max - data_min) * 255).astype(np.uint8)
+            else:
+                normalized = np.zeros_like(data, dtype=np.uint8)
+            
+            # Create image
+            img = Image.fromarray(normalized, mode='L')
+            
+            # Convert to base64
+            buffer = io.BytesIO()
+            img.save(buffer, format='PNG')
+            img_base64 = base64.b64encode(buffer.getvalue()).decode()
+            
+            # Get bounds
+            if 'longitude' in da.dims and 'latitude' in da.dims:
+                bounds = {
+                    'west': float(da.longitude.min()),
+                    'east': float(da.longitude.max()),
+                    'south': float(da.latitude.min()),
+                    'north': float(da.latitude.max())
+                }
+            else:
+                bounds = {'west': -180, 'east': 180, 'south': -90, 'north': 90}
+            
+            preview_data[var] = {
+                'data': img_base64,
+                'bounds': bounds,
+                'stats': {
+                    'min': float(data_min),
+                    'max': float(data_max),
+                    'mean': float(np.nanmean(data))
+                }
+            }
+            
+    except Exception as e:
+        print(f"Error generating previews: {e}")
+    
+    return preview_data
 
 def upload_to_mapbox_mts(token: str, username: str, nc_path: str, tileset_id: str, recipe: Dict) -> Dict:
     """
@@ -382,7 +501,7 @@ async def process_file(
                                       os.path.splitext(file.filename)[0].lower())[:32]
                     
                     # Create recipe
-                    recipe = create_recipe_for_netcdf(str(prepared_path), tileset_id)
+                    recipe = create_recipe_for_netcdf(str(prepared_path), tileset_id, username)
                     
                     # Upload with MTS
                     upload_result = upload_to_mapbox_mts(token, username, str(prepared_path), tileset_id, recipe)
@@ -406,6 +525,7 @@ async def process_file(
                         json.dump(recipe, f, indent=2)
                     
                     response_data["recipe_download"] = f"/download-recipe/{tileset_id}"
+                    response_data["visualization_url"] = f"/visualize/{tileset_id}"
                     
                 except Exception as e:
                     response_data["message"] += f"<br>⚠️ Mapbox upload failed: {str(e)}"
@@ -425,6 +545,132 @@ async def process_file(
         # Clean up temporary files after a delay (optional)
         # You might want to keep them for download purposes
         pass
+
+@app.post("/process-advanced")
+async def process_file_advanced(
+    file: UploadFile = File(...),
+    mapbox_token: Optional[str] = Form(None),
+    mapbox_username: Optional[str] = Form(None),
+    upload_to_mapbox: bool = Form(True),
+    create_recipe: bool = Form(True),
+    enable_queries: bool = Form(False),
+    temporal_start: Optional[str] = Form(None),
+    temporal_end: Optional[str] = Form(None),
+    spatial_bounds: Optional[str] = Form(None)  # Format: "west,south,east,north"
+):
+    """
+    Advanced processing with query support and tileset management
+    """
+    filepath = None
+    prepared_path = None
+    
+    try:
+        # Use provided credentials or fall back to environment variables
+        token = mapbox_token or MAPBOX_TOKEN
+        username = mapbox_username or MAPBOX_USERNAME
+        
+        # Save uploaded NetCDF file
+        filepath = TEMP_DIR / file.filename
+        with open(filepath, "wb") as f:
+            content = await file.read()
+            f.write(content)
+        
+        # Open dataset for analysis
+        ds = xr.open_dataset(str(filepath))
+        
+        # Apply queries if requested
+        if enable_queries:
+            # Temporal query
+            if temporal_start or temporal_end:
+                from tileset_management import TilesetQueryTools
+                ds = TilesetQueryTools.query_temporal_range(ds, temporal_start, temporal_end)
+            
+            # Spatial query
+            if spatial_bounds:
+                bounds = [float(x) for x in spatial_bounds.split(',')]
+                if len(bounds) == 4:
+                    from tileset_management import TilesetQueryTools
+                    ds = TilesetQueryTools.query_spatial_bounds(ds, *bounds)
+        
+        # Compute statistics
+        from tileset_management import TilesetQueryTools
+        statistics = TilesetQueryTools.compute_statistics(ds)
+        
+        # Prepare for Mapbox
+        prepared_path = TEMP_DIR / f"prepared_{file.filename}"
+        prepare_netcdf_for_mapbox_advanced(ds, str(prepared_path))
+        
+        # Generate preview images for variables
+        preview_data = generate_preview_images(ds)
+        
+        response_data = {
+            "success": True,
+            "statistics": statistics,
+            "preview_data": preview_data,
+            "message": f"Successfully processed {file.filename}"
+        }
+        
+        # Upload to Mapbox if requested
+        if upload_to_mapbox and token and username:
+            tileset_id = re.sub(r'[^a-zA-Z0-9_-]', '_', 
+                              os.path.splitext(file.filename)[0].lower())[:32]
+            
+            # Create recipe
+            recipe = create_recipe_for_netcdf(str(prepared_path), tileset_id, username)
+            
+            # Use tileset manager
+            from tileset_management import MapboxTilesetManager
+            manager = MapboxTilesetManager(token, username)
+            
+            result = manager.process_netcdf_to_tileset(str(prepared_path), tileset_id, recipe)
+            
+            if result['success']:
+                response_data["mapbox_upload"] = True
+                response_data["tileset_id"] = result['tileset_id']
+                response_data["job_id"] = result.get('job_id')
+                response_data["recipe"] = recipe
+                response_data["visualization_url"] = f"/visualize/{tileset_id}"
+                
+                # Save recipe for later reference
+                recipe_path = TEMP_DIR / f"recipe_{tileset_id}.json"
+                with open(recipe_path, 'w') as f:
+                    json.dump(recipe, f, indent=2)
+            else:
+                response_data["mapbox_error"] = result.get('error')
+        
+        ds.close()
+        return JSONResponse(response_data)
+        
+    except Exception as e:
+        print(f"Error processing file: {str(e)}")
+        traceback.print_exc()
+        return JSONResponse({
+            "success": False,
+            "message": f"Error processing file: {str(e)}"
+        }, status_code=500)
+
+@app.get("/visualize/{tileset_id}")
+async def visualize_tileset(request: Request, tileset_id: str):
+    """
+    Display multi-variable visualization page for a tileset
+    """
+    # Get recipe data if available
+    recipe_path = TEMP_DIR / f"recipe_{tileset_id}.json"
+    if recipe_path.exists():
+        with open(recipe_path, 'r') as f:
+            recipe = json.load(f)
+    else:
+        recipe = {}
+    
+    # Use public token for visualization
+    public_token = MAPBOX_PUBLIC_TOKEN or MAPBOX_TOKEN
+    
+    return templates.TemplateResponse("multi_variable_visualization.html", {
+        "request": request,
+        "tileset_id": f"{MAPBOX_USERNAME}.{tileset_id}",
+        "mapbox_token": public_token,
+        "recipe": recipe
+    })
 
 @app.get("/download-tif/{variable}")
 async def download_tif(variable: str):
@@ -472,6 +718,107 @@ async def check_job(job_id: str, username: str = None, token: str = None):
 async def demo_page(request: Request):
     """Demo page showing how to visualize the tileset in Mapbox GL JS."""
     return templates.TemplateResponse("demo.html", {"request": request})
+
+@app.get("/api/tileset-info/{tileset_id}")
+async def get_tileset_info(tileset_id: str):
+    """
+    Get information about a tileset including available layers and statistics
+    """
+    try:
+        # Load recipe if available
+        recipe_path = TEMP_DIR / f"recipe_{tileset_id}.json"
+        if recipe_path.exists():
+            with open(recipe_path, 'r') as f:
+                recipe = json.load(f)
+                
+            return JSONResponse({
+                "success": True,
+                "recipe": recipe,
+                "bands": recipe.get("metadata", {}).get("all_bands", {}),
+                "vector_pairs": recipe.get("metadata", {}).get("vector_pairs", []),
+                "scalar_variables": recipe.get("metadata", {}).get("scalar_variables", [])
+            })
+        else:
+            return JSONResponse({
+                "success": False,
+                "message": "Recipe not found"
+            }, status_code=404)
+            
+    except Exception as e:
+        return JSONResponse({
+            "success": False,
+            "message": str(e)
+        }, status_code=500)
+
+@app.post("/api/query-tileset")
+async def query_tileset(
+    tileset_id: str = Form(...),
+    query_type: str = Form(...),  # 'statistics', 'temporal', 'spatial'
+    parameters: str = Form("{}")   # JSON string with query parameters
+):
+    """
+    Perform queries on tileset data
+    """
+    try:
+        params = json.loads(parameters)
+        
+        # This would typically query the actual tileset data
+        # For demonstration, we'll return sample results
+        
+        if query_type == "statistics":
+            return JSONResponse({
+                "success": True,
+                "query_type": query_type,
+                "results": {
+                    "temperature": {
+                        "min": -10.5,
+                        "max": 35.2,
+                        "mean": 15.7,
+                        "std": 8.3
+                    },
+                    "wind_speed": {
+                        "min": 0,
+                        "max": 25.5,
+                        "mean": 8.2,
+                        "std": 4.1
+                    }
+                }
+            })
+        
+        elif query_type == "temporal":
+            return JSONResponse({
+                "success": True,
+                "query_type": query_type,
+                "results": {
+                    "time_range": params.get("time_range", ["2024-01-01", "2024-12-31"]),
+                    "data_points": 365,
+                    "temporal_resolution": "daily"
+                }
+            })
+        
+        elif query_type == "spatial":
+            bounds = params.get("bounds", [-180, -90, 180, 90])
+            return JSONResponse({
+                "success": True,
+                "query_type": query_type,
+                "results": {
+                    "bounds": bounds,
+                    "grid_points": 10000,
+                    "spatial_resolution": "0.25 degrees"
+                }
+            })
+        
+        else:
+            return JSONResponse({
+                "success": False,
+                "message": f"Unknown query type: {query_type}"
+            }, status_code=400)
+            
+    except Exception as e:
+        return JSONResponse({
+            "success": False,
+            "message": str(e)
+        }, status_code=500)
 
 @app.get("/health")
 async def health_check():

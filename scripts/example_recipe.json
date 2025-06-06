@@ -1,0 +1,101 @@
+{
+  "version": 1,
+  "layers": {
+    "default": {
+      "source": "mapbox://tileset-source/abreg2025/weather_data_2024",
+      "minzoom": 0,
+      "maxzoom": 14,
+      "raster_array": {
+        "bands": {
+          "wind_u": {
+            "band": 1,
+            "source_band": "u10"
+          },
+          "wind_v": {
+            "band": 2,
+            "source_band": "v10"
+          },
+          "temperature": {
+            "band": 3,
+            "source_band": "t2m"
+          },
+          "pressure": {
+            "band": 4,
+            "source_band": "sp"
+          },
+          "humidity": {
+            "band": 5,
+            "source_band": "rh"
+          }
+        }
+      },
+      "tiles": {
+        "buffer_size": 1,
+        "tile_size": 512,
+        "filter": ["all"],
+        "resampling": "bilinear"
+      }
+    }
+  },
+  "metadata": {
+    "band_mapping": {
+      "u10": "wind_u",
+      "v10": "wind_v",
+      "t2m": "temperature",
+      "sp": "pressure",
+      "rh": "humidity"
+    },
+    "vector_pairs": [
+      {
+        "u": "u10",
+        "v": "v10",
+        "name": "wind"
+      }
+    ],
+    "scalar_variables": ["t2m", "sp", "rh"],
+    "all_bands": {
+      "wind_u": {
+        "source": "u10",
+        "type": "vector_u",
+        "stats": {
+          "min": -25.5,
+          "max": 25.5
+        }
+      },
+      "wind_v": {
+        "source": "v10",
+        "type": "vector_v",
+        "stats": {
+          "min": -25.5,
+          "max": 25.5
+        }
+      },
+      "temperature": {
+        "source": "t2m",
+        "type": "scalar",
+        "stats": {
+          "min": -40.0,
+          "max": 50.0
+        }
+      },
+      "pressure": {
+        "source": "sp",
+        "type": "scalar",
+        "stats": {
+          "min": 95000,
+          "max": 105000
+        }
+      },
+      "humidity": {
+        "source": "rh",
+        "type": "scalar",
+        "stats": {
+          "min": 0,
+          "max": 100
+        }
+      }
+    },
+    "created_at": "2024-12-20 10:30:00",
+    "source_file": "weather_data_2024.nc"
+  }
+}
