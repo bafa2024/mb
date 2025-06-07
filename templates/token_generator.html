@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mapbox Token Generator - Create Tokens with MTS Scopes</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --mapbox-blue: #4264fb;
+            --mapbox-dark: #273d56;
+            --success: #28a745;
+            --danger: #dc3545;
+            --warning: #ffc107;
+            --info: #17a2b8;
+        }
+        
+        body {
+            background: #f8f9fa;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            min-height: 100vh;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, var(--mapbox-dark) 0%, var(--mapbox-blue) 100%);
+            color: white;
+            padding: 3rem 0;
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+        
+        .main-card {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            padding: 2.5rem;
+            margin-bottom: 2rem;
+            border: 1px solid #e9ecef;
+        }
+        
+        .scope-group {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            border: 1px solid #e9ecef;
+        }
+        
+        .scope-checkbox {
+            display: flex;
+            align-items: center;
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+            background: white;
+            border-radius: 8px;
+            transition: all 0.2s;
+            cursor: pointer;
+            border: 2px solid transparent;
+        }
+        
+        .scope-checkbox:hover {
+            border-color: var(--mapbox-blue);
+            box-shadow: 0 2px 8px rgba(66, 100, 251, 0.1);
+        }
+        
+        .scope-checkbox.required {
+            background: #e7f3ff;
+        }
+        
+        .scope-checkbox input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            margin-right: 12px;
+            cursor: pointer;
+        }
+        
+        .scope-info {
+            flex-grow: 1;
+        }
+        
+        .scope-name {
+            font-weight: 600;
+            color: #2c3e50;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .scope-description {
+            font-size: 0.875rem;
+            color: #6c757d;
+            margin-top: 4px;
+        }
+        
+        .required-badge {
+            background: var(--danger);
+            color: white;
+            font-size: 0.75rem;
+            padding: 2px 8px;
+            border-radius: 12px;
+        }
+        
+        .btn-generate {
+            background: var(--mapbox-blue);
+            color: white;
+            border: none;
+            padding: 12px 32px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 1.1rem;
+            transition: all 0.3s;
+            box-shadow: 0 4px 12px rgba(66, 100, 251, 0.2);
+        }
+        
+        .btn-generate:hover {
+            background: #3450d0;
+            color: white;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(66, 100, 251, 0.3);
+        }
+        
+        .btn-generate:disabled {
+            background: #6c757d;
+            box-shadow: none;
+        }
+        
+        .result-section {
+            display: none;
+            margin-top: 2rem;
+        }
+        
+        .success-box {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            border-radius: 12px;
+            padding: 2rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .error-box {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 12px;
+            padding: 2rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .token-display {
+            background: #2c3e50;
+            color: #fff;
+            padding: 1.5rem;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            word-break: break-all;
+            position: relative;
+            margin-top: 1rem;
+        }
+        
+        .copy-button {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: white;
+            color: #2c3e50;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .copy-button:hover {
+            background: #f8f9fa;
+        }
+        
+        .copy-button.copied {
+            background: var(--success);
+            color: white;
+        }
+        
+        .alert-custom {
+            border-radius: 10px;
+            border: none;
+            padding: 1rem 1.5rem;
+        }
+        
+        .input-group-text {
+            background: #f8f9fa;
+            border-right: none;
+        }
+        
+        .form-control:focus {
+            border-color: var(--mapbox-blue);
+            box-shadow: 0 0 0 0.2rem rgba(66, 100, 251, 0.25);
+        }
+        
+        .spinner-border {
+            width: 1.5rem;
+            height: 1.5rem;
+            border-width: 0.15em;
+        }
+        
+        .step-indicator {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 2rem;
+            position: relative;
+        }
+        
+        .step {
+            flex: 1;
+            text-align: center;
+            position: relative;
+            z-index: 1;
+        }
+        
+        .step-circle {
+            width: 40px;
+            height: 40px;
+            background: #e9ecef;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 8px;
+            font-weight: 600;
+            color: #6c757d;
+            transition: all 0.3s;
+        }
+        
+        .step.active .step-circle {
+            background: var(--mapbox-blue);
+            color: white;
+            box-shadow: 0 0 0 4px rgba(66, 100, 251, 0.2);
+        }
+        
+        .step.completed .step-circle {
+            background: var(--success);
+            color: white;
+        }
+        
+        .step-line {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            width: 100%;
+            height: 2px;
+            background: #e9ecef;
+            z-index: 0;
+        }
+        
+        .step:last-child .step-line {
+            display: none;
+        }
+        
+        .step.completed .step-line {
+            background: var(--success);
+        }
+        
+        .info-card {
+            background: #e7f3ff;
+            border-radius: 10px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            border: 1px solid #b8daff;
+        }
+        
+        .code-block {
+            background: #f4f4f4;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 1rem;
+            font-family: 'Courier New', monospace;
+            font-size: 0.875rem;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        
+        .accordion-button:not(.collapsed) {
+            background-color: #e7f3ff;
+            color: var(--mapbox-blue);
+        }
+        
+        .accordion-button:focus {
+            box-shadow: none;
+            border-color: var(--mapbox-blue);
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="container">
+            <h1 class="display-5 mb-3">
+                <i class="fas fa-key"></i> Mapbox Token Generator
+            </h1>
+            <p class="lead mb-0">Generate tokens with proper MTS scopes for NetCDF converter</p>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Info Section -->
+        <div class="info-card">
+            <h5 class="mb-3"><i class="fas fa-info-circle"></i> About This Tool</h5>
+            <p class="mb-2">This tool helps you create Mapbox tokens with the required <strong>secret scopes</strong> for the NetCDF to Mapbox Tileset Converter.</p>
+            <p class="mb-0">You'll need a <strong>master token</strong> that has the <code>tokens:write</code> scope to create new tokens.</p>
+        </div>
+
+        <!-- Steps -->
+        <div class="main-card">
+            <div class="step-indicator">
+                <div class="step active" id="step1">
+                    <div class="step-circle">1</div>
+                    <small>Enter Master Token</small>
+                    <div class="step-line"></div>
+                </div>
+                <div class="step" id="step2">
+                    <div class="step-circle">2</div>
+                    <small>Configure Scopes</small>
+                    <div class="step-line"></div>
+                </div>
+                <div class="step" id="step3">
+                    <div class="step-circle">3</div>
+                    <small>Generate Token</small>
+                </div>
+            </div>
+
+            <!-- Master Token Input -->
+            <h4 class="mb-4">Step 1: Enter Your Master Token</h4>
+            <div class="alert alert-custom alert-warning">
+                <i class="fas fa-exclamation-triangle"></i> 
+                <strong>Important:</strong> Your master token must have the <code>tokens:write</code> scope to create new tokens.
+                <a href="https://account.mapbox.com/access-tokens/" target="_blank" class="alert-link">
+                    Check your tokens <i class="fas fa-external-link-alt fa-sm"></i>
+                </a>
+            </div>
+
+            <div class="row g-3 mb-4">
+                <div class="col-md-8">
+                    <label class="form-label fw-semibold">Master Token</label>
+                    <div class="input-group">
+                        <span class="input-group-text"><i class="fas fa-key"></i></span>
+                        <input type="text" class="form-control" id="masterToken" 
+                               placeholder="sk.eyJ1IjoiYW..." 
+                               value="">
+                    </div>
+                    <small class="text-muted">Token with tokens:write scope</small>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label fw-semibold">Username</label>
+                    <div class="input-group">
+                        <span class="input-group-text"><i class="fas fa-user"></i></span>
+                        <input type="text" class="form-control" id="username" 
+                               placeholder="your-username" 
+                               value="">
+                    </div>
+                    <small class="text-muted">Your Mapbox username</small>
+                </div>
+            </div>
+
+            <!-- Token Configuration -->
+            <h4 class="mb-3 mt-5">Step 2: Configure New Token</h4>
+            
+            <div class="mb-4">
+                <label class="form-label fw-semibold">Token Name/Note</label>
+                <input type="text" class="form-control" id="tokenNote" 
+                       placeholder="NetCDF Converter Token" 
+                       value="NetCDF Converter Token">
+                <small class="text-muted">A descriptive name to identify this token</small>
+            </div>
+
+            <!-- Scopes Selection -->
+            <div class="scope-group">
+                <h5 class="mb-3">Required MTS Scopes</h5>
+                <div class="scope-checkbox required">
+                    <input type="checkbox" id="scope_tilesets_write" checked disabled>
+                    <div class="scope-info">
+                        <div class="scope-name">
+                            tilesets:write
+                            <span class="required-badge">Required</span>
+                        </div>
+                        <div class="scope-description">Create and modify tilesets</div>
+                    </div>
+                </div>
+                <div class="scope-checkbox required">
+                    <input type="checkbox" id="scope_tilesets_read" checked disabled>
+                    <div class="scope-info">
+                        <div class="scope-name">
+                            tilesets:read
+                            <span class="required-badge">Required</span>
+                        </div>
+                        <div class="scope-description">Read tileset information</div>
+                    </div>
+                </div>
+                <div class="scope-checkbox required">
+                    <input type="checkbox" id="scope_tilesets_list" checked disabled>
+                    <div class="scope-info">
+                        <div class="scope-name">
+                            tilesets:list
+                            <span class="required-badge">Required</span>
+                        </div>
+                        <div class="scope-description">List all tilesets in your account</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="scope-group">
+                <h5 class="mb-3">Additional Recommended Scopes</h5>
+                <div class="scope-checkbox">
+                    <input type="checkbox" id="scope_sources_write" checked>
+                    <div class="scope-info">
+                        <div class="scope-name">sources:write</div>
+                        <div class="scope-description">Create and modify tileset sources</div>
+                    </div>
+                </div>
+                <div class="scope-checkbox">
+                    <input type="checkbox" id="scope_sources_read" checked>
+                    <div class="scope-info">
+                        <div class="scope-name">sources:read</div>
+                        <div class="scope-description">Read source information</div>
+                    </div>
+                </div>
+                <div class="scope-checkbox">
+                    <input type="checkbox" id="scope_styles_read">
+                    <div class="scope-info">
+                        <div class="scope-name">styles:read</div>
+                        <div class="scope-description">Read style information (for visualization)</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Generate Button -->
+            <div class="text-center mt-4">
+                <button class="btn btn-generate" id="generateBtn" onclick="generateToken()">
+                    <i class="fas fa-magic"></i> Generate Token
+                </button>
+            </div>
+        </div>
+
+        <!-- Results Section -->
+        <div class="result-section" id="resultSection">
+            <div class="main-card">
+                <h4 class="mb-4">Generated Token</h4>
+                
+                <!-- Success Result -->
+                <div id="successResult" style="display: none;">
+                    <div class="success-box">
+                        <h5 class="text-success mb-3">
+                            <i class="fas fa-check-circle"></i> Token Created Successfully!
+                        </h5>
+                        <p class="mb-2">Your new token has been created with all the required scopes for the NetCDF converter.</p>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="fw-semibold mb-2">Your New Token:</label>
+                        <div class="token-display">
+                            <button class="copy-button" onclick="copyToken()">
+                                <i class="fas fa-copy"></i> Copy
+                            </button>
+                            <code id="generatedToken">sk.eyJ1IjoiYW...</code>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-custom alert-info">
+                        <h6 class="alert-heading">Next Steps:</h6>
+                        <ol class="mb-0">
+                            <li>Copy this token (it won't be shown again)</li>
+                            <li>Update your <code>.env</code> file with this token</li>
+                            <li>Test the token using the <a href="/test-token" target="_blank">Token Tester</a></li>
+                            <li>Try uploading a NetCDF file again</li>
+                        </ol>
+                    </div>
+
+                    <div class="mt-4">
+                        <h6>Token Details:</h6>
+                        <div class="code-block" id="tokenDetails"></div>
+                    </div>
+                </div>
+
+                <!-- Error Result -->
+                <div id="errorResult" style="display: none;">
+                    <div class="error-box">
+                        <h5 class="text-danger mb-3">
+                            <i class="fas fa-exclamation-circle"></i> Token Generation Failed
+                        </h5>
+                        <div id="errorMessage"></div>
+                    </div>
+                </div>
+
+                <div class="text-center mt-4">
+                    <button class="btn btn-secondary" onclick="resetForm()">
+                        <i class="fas fa-redo"></i> Generate Another Token
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Help Section -->
+        <div class="main-card mt-4">
+            <h4 class="mb-4"><i class="fas fa-question-circle"></i> Frequently Asked Questions</h4>
+            
+            <div class="accordion" id="faqAccordion">
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq1">
+                            How do I get a master token with tokens:write scope?
+                        </button>
+                    </h2>
+                    <div id="faq1" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                        <div class="accordion-body">
+                            <ol>
+                                <li>Go to <a href="https://account.mapbox.com/access-tokens/" target="_blank">Mapbox Tokens</a></li>
+                                <li>Create a new token</li>
+                                <li>In the <strong>Secret scopes</strong> section, check <code>tokens:write</code></li>
+                                <li>Create the token and use it as your master token here</li>
+                            </ol>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq2">
+                            Why can't I add scopes to my existing token?
+                        </button>
+                    </h2>
+                    <div id="faq2" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                        <div class="accordion-body">
+                            Mapbox doesn't allow modifying scopes of existing tokens for security reasons. You must create a new token with the required scopes. This tool helps you do that programmatically.
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq3">
+                            What's the difference between public and secret scopes?
+                        </button>
+                    </h2>
+                    <div id="faq3" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                        <div class="accordion-body">
+                            <ul>
+                                <li><strong>Public scopes</strong>: Basic permissions like styles:read, fonts:read</li>
+                                <li><strong>Secret scopes</strong>: Advanced permissions like tilesets:write, tokens:write</li>
+                            </ul>
+                            The MTS (Mapbox Tiling Service) requires secret scopes, which are only available for secret tokens (starting with <code>sk.</code>).
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Auto-fill from URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const masterTokenFromUrl = urlParams.get('master_token');
+        const usernameFromUrl = urlParams.get('username');
+        
+        if (masterTokenFromUrl) document.getElementById('masterToken').value = masterTokenFromUrl;
+        if (usernameFromUrl) document.getElementById('username').value = usernameFromUrl;
+
+        async function generateToken() {
+            const masterToken = document.getElementById('masterToken').value.trim();
+            const username = document.getElementById('username').value.trim();
+            const tokenNote = document.getElementById('tokenNote').value.trim() || 'NetCDF Converter Token';
+            
+            if (!masterToken || !username) {
+                alert('Please enter both master token and username');
+                return;
+            }
+
+            // Collect selected scopes
+            const scopes = [
+                'tilesets:write',
+                'tilesets:read',
+                'tilesets:list'
+            ];
+            
+            if (document.getElementById('scope_sources_write').checked) scopes.push('sources:write');
+            if (document.getElementById('scope_sources_read').checked) scopes.push('sources:read');
+            if (document.getElementById('scope_styles_read').checked) scopes.push('styles:read');
+
+            // Update UI
+            const btn = document.getElementById('generateBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Generating...';
+            
+            // Update steps
+            document.getElementById('step1').classList.add('completed');
+            document.getElementById('step2').classList.add('completed');
+            document.getElementById('step3').classList.add('active');
+
+            try {
+                // Call the backend endpoint
+                const response = await fetch('/api/generate-token', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        master_token: masterToken,
+                        username: username,
+                        note: tokenNote,
+                        scopes: scopes
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    // Show success
+                    showSuccess(data);
+                } else {
+                    // Show error
+                    showError(data.error || 'Failed to generate token');
+                }
+            } catch (error) {
+                showError(`Network error: ${error.message}`);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-magic"></i> Generate Token';
+            }
+        }
+
+        function showSuccess(data) {
+            document.getElementById('resultSection').style.display = 'block';
+            document.getElementById('successResult').style.display = 'block';
+            document.getElementById('errorResult').style.display = 'none';
+            
+            document.getElementById('generatedToken').textContent = data.token;
+            
+            // Show token details
+            const details = {
+                id: data.id,
+                token: data.token,
+                note: data.note,
+                scopes: data.scopes,
+                created: data.created,
+                expires: data.expires || 'Never'
+            };
+            
+            document.getElementById('tokenDetails').textContent = JSON.stringify(details, null, 2);
+            
+            // Update step indicator
+            document.getElementById('step3').classList.add('completed');
+            
+            // Scroll to results
+            document.getElementById('resultSection').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function showError(errorMessage) {
+            document.getElementById('resultSection').style.display = 'block';
+            document.getElementById('successResult').style.display = 'none';
+            document.getElementById('errorResult').style.display = 'block';
+            
+            let errorHtml = `<p class="mb-2">${errorMessage}</p>`;
+            
+            // Add specific error guidance
+            if (errorMessage.includes('401') || errorMessage.includes('Unauthorized')) {
+                errorHtml += `
+                    <div class="mt-3">
+                        <h6>Possible causes:</h6>
+                        <ul>
+                            <li>Your master token doesn't have the <code>tokens:write</code> scope</li>
+                            <li>The master token is invalid or expired</li>
+                            <li>The username doesn't match the token owner</li>
+                        </ul>
+                        <p class="mb-0 mt-3">
+                            <a href="https://account.mapbox.com/access-tokens/" target="_blank" class="btn btn-sm btn-outline-danger">
+                                Create a new master token with tokens:write scope
+                            </a>
+                        </p>
+                    </div>
+                `;
+            }
+            
+            document.getElementById('errorMessage').innerHTML = errorHtml;
+            
+            // Scroll to results
+            document.getElementById('resultSection').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function copyToken() {
+            const tokenText = document.getElementById('generatedToken').textContent;
+            navigator.clipboard.writeText(tokenText).then(() => {
+                const btn = document.querySelector('.copy-button');
+                btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+                btn.classList.add('copied');
+                
+                setTimeout(() => {
+                    btn.innerHTML = '<i class="fas fa-copy"></i> Copy';
+                    btn.classList.remove('copied');
+                }, 2000);
+            });
+        }
+
+        function resetForm() {
+            // Reset UI
+            document.getElementById('resultSection').style.display = 'none';
+            document.getElementById('tokenNote').value = 'NetCDF Converter Token';
+            
+            // Reset steps
+            document.getElementById('step1').classList.remove('completed');
+            document.getElementById('step2').classList.remove('completed');
+            document.getElementById('step3').classList.remove('completed', 'active');
+            document.getElementById('step1').classList.add('active');
+            
+            // Scroll to top
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        // Enable/disable checkboxes for required scopes
+        document.querySelectorAll('.scope-checkbox.required input').forEach(checkbox => {
+            checkbox.onclick = function() { return false; };
+        });
+    </script>
+</body>
+</html>

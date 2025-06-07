@@ -1,0 +1,1152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mapbox Token Tester - Comprehensive Testing Tool</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --mapbox-blue: #4264fb;
+            --mapbox-dark: #273d56;
+            --success: #28a745;
+            --danger: #dc3545;
+            --warning: #ffc107;
+        }
+        
+        body {
+            background: #f8f9fa;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        
+        .header {
+            background: var(--mapbox-dark);
+            color: white;
+            padding: 2rem 0;
+            margin-bottom: 2rem;
+        }
+        
+        .test-card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 2rem;
+            margin-bottom: 2rem;
+            border: 2px solid transparent;
+            transition: all 0.3s ease;
+        }
+        
+        .test-card:hover {
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+        }
+        
+        .test-card.success {
+            border-color: var(--success);
+        }
+        
+        .test-card.error {
+            border-color: var(--danger);
+        }
+        
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-weight: 500;
+            font-size: 0.875rem;
+        }
+        
+        .status-success {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .status-error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .status-pending {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
+        .btn-mapbox {
+            background: var(--mapbox-blue);
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-mapbox:hover {
+            background: #3450d0;
+            color: white;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(66, 100, 251, 0.3);
+        }
+        
+        .code-block {
+            background: #f4f4f4;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 1rem;
+            font-family: 'Courier New', monospace;
+            font-size: 0.875rem;
+            margin: 1rem 0;
+            position: relative;
+            overflow-x: auto;
+        }
+        
+        .copy-btn {
+            position: absolute;
+            top: 0.5rem;
+            right: 0.5rem;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 0.25rem 0.5rem;
+            font-size: 0.75rem;
+            cursor: pointer;
+        }
+        
+        .endpoint-link {
+            color: var(--mapbox-blue);
+            text-decoration: none;
+            word-break: break-all;
+        }
+        
+        .endpoint-link:hover {
+            text-decoration: underline;
+        }
+        
+        .result-box {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-top: 1rem;
+            font-size: 0.875rem;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .quick-links {
+            background: #e7f3ff;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        
+        .scope-badge {
+            background: #e3f2fd;
+            color: #1565c0;
+            padding: 0.25rem 0.75rem;
+            border-radius: 4px;
+            font-size: 0.875rem;
+            margin: 0.25rem;
+            display: inline-block;
+        }
+        
+        .scope-badge.required {
+            background: #ffebee;
+            color: #c62828;
+        }
+        
+        .scope-badge.has {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+        
+        .test-section {
+            margin-top: 3rem;
+        }
+        
+        .spinner {
+            display: inline-block;
+            width: 1rem;
+            height: 1rem;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid var(--mapbox-blue);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .alert-custom {
+            border-radius: 8px;
+            border: none;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+        
+        .input-group-text {
+            background: #f8f9fa;
+            border-right: none;
+        }
+        
+        .form-control:focus {
+            border-color: var(--mapbox-blue);
+            box-shadow: 0 0 0 0.2rem rgba(66, 100, 251, 0.25);
+        }
+        
+        /* Enhanced error styling */
+        .error-details {
+            background: #fff5f5;
+            border: 1px solid #feb2b2;
+            border-radius: 8px;
+            padding: 1.5rem;
+        }
+        
+        .error-details code {
+            background: #fed7d7;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+        }
+        
+        .cursor-pointer {
+            cursor: pointer;
+        }
+        
+        details summary:hover {
+            color: #333 !important;
+        }
+        
+        .error-details ul, .error-details ol {
+            margin-bottom: 0;
+        }
+        
+        .error-details li {
+            margin-bottom: 0.5rem;
+        }
+        
+        .success-details {
+            background: #f0fdf4;
+            border: 1px solid #86efac;
+            border-radius: 8px;
+            padding: 1.5rem;
+        }
+        
+        .warning-box {
+            background: #fffbeb;
+            border: 1px solid #fde047;
+            border-radius: 8px;
+            padding: 1rem;
+            margin: 1rem 0;
+        }
+        
+        .diagnostic-item {
+            display: flex;
+            align-items: start;
+            margin-bottom: 0.5rem;
+        }
+        
+        .diagnostic-icon {
+            margin-right: 0.5rem;
+            margin-top: 0.2rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="container">
+            <h1><i class="fas fa-key"></i> Mapbox Token Tester</h1>
+            <p class="lead mb-0">Comprehensive tool to test and validate your Mapbox access tokens</p>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Quick Links Section -->
+        <div class="quick-links">
+            <h4><i class="fas fa-link"></i> Quick Links</h4>
+            <div class="row mt-3">
+                <div class="col-md-3">
+                    <strong>Create Token:</strong><br>
+                    <a href="https://account.mapbox.com/access-tokens/" target="_blank" class="endpoint-link">
+                        <i class="fas fa-external-link-alt"></i> Mapbox Dashboard
+                    </a>
+                </div>
+                <div class="col-md-3">
+                    <strong>API Documentation:</strong><br>
+                    <a href="https://docs.mapbox.com/api/accounts/tokens/" target="_blank" class="endpoint-link">
+                        <i class="fas fa-book"></i> Tokens API
+                    </a>
+                </div>
+                <div class="col-md-3">
+                    <strong>MTS Documentation:</strong><br>
+                    <a href="https://docs.mapbox.com/mapbox-tiling-service/guides/" target="_blank" class="endpoint-link">
+                        <i class="fas fa-map"></i> Tiling Service
+                    </a>
+                </div>
+                <div class="col-md-3">
+                    <strong>Scopes Reference:</strong><br>
+                    <a href="https://docs.mapbox.com/accounts/guides/tokens/#scopes" target="_blank" class="endpoint-link">
+                        <i class="fas fa-shield-alt"></i> Token Scopes
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Token Input Section -->
+        <div class="test-card">
+            <h3><i class="fas fa-keyboard"></i> Enter Your Credentials</h3>
+            <p class="text-muted">Enter your Mapbox token and username to run comprehensive tests</p>
+            
+            <div class="row g-3">
+                <div class="col-md-8">
+                    <label class="form-label">Access Token</label>
+                    <div class="input-group">
+                        <span class="input-group-text"><i class="fas fa-key"></i></span>
+                        <input type="text" class="form-control" id="mapboxToken" 
+                               placeholder="sk.eyJ1IjoiYW..." value="">
+                    </div>
+                    <small class="text-muted">Your secret token starting with 'sk.'</small>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Username</label>
+                    <div class="input-group">
+                        <span class="input-group-text"><i class="fas fa-user"></i></span>
+                        <input type="text" class="form-control" id="mapboxUsername" 
+                               placeholder="your-username" value="">
+                    </div>
+                    <small class="text-muted">Your Mapbox username</small>
+                </div>
+            </div>
+            
+            <div class="mt-3">
+                <button class="btn btn-mapbox" onclick="runAllTests()">
+                    <i class="fas fa-play"></i> Run All Tests
+                </button>
+                <button class="btn btn-outline-secondary ms-2" onclick="clearResults()">
+                    <i class="fas fa-eraser"></i> Clear Results
+                </button>
+            </div>
+        </div>
+
+        <!-- Required Scopes Info -->
+        <div class="test-card">
+            <h4><i class="fas fa-shield-alt"></i> Required Token Scopes</h4>
+            <p class="text-muted">For MTS (Mapbox Tiling Service) operations, your token needs these scopes:</p>
+            <div class="mt-3">
+                <span class="scope-badge required">tilesets:write</span>
+                <span class="scope-badge required">tilesets:read</span>
+                <span class="scope-badge required">tilesets:list</span>
+                <span class="scope-badge">sources:write</span>
+                <span class="scope-badge">sources:read</span>
+            </div>
+            <div class="alert alert-custom alert-info mt-3">
+                <i class="fas fa-info-circle"></i> 
+                <strong>How to create a proper token:</strong>
+                <ol class="mb-0 mt-2">
+                    <li>Go to <a href="https://account.mapbox.com/access-tokens/" target="_blank">Mapbox Tokens</a></li>
+                    <li>Click "Create a token"</li>
+                    <li>Give it a name (e.g., "NetCDF Converter")</li>
+                    <li>Under "Scopes", check: <code>tilesets:write</code>, <code>tilesets:read</code>, <code>tilesets:list</code></li>
+                    <li>Click "Create token"</li>
+                    <li>Copy the token (starts with <code>sk.</code>)</li>
+                </ol>
+            </div>
+        </div>
+
+        <!-- Test Results Section -->
+        <div class="test-section">
+            <h3><i class="fas fa-vial"></i> Test Results</h3>
+            
+            <!-- Test 1: Token Validation -->
+            <div class="test-card" id="test1">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5><i class="fas fa-check-circle"></i> Test 1: Token Validation</h5>
+                        <p class="text-muted mb-0">Verify token format and basic validity</p>
+                    </div>
+                    <div id="test1-status">
+                        <span class="status-badge status-pending">
+                            <i class="fas fa-clock"></i> Pending
+                        </span>
+                    </div>
+                </div>
+                <div class="result-box d-none" id="test1-result"></div>
+            </div>
+
+            <!-- Test 2: Token Scopes -->
+            <div class="test-card" id="test2">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5><i class="fas fa-shield-check"></i> Test 2: Token Scopes</h5>
+                        <p class="text-muted mb-0">Check if token has required MTS scopes</p>
+                    </div>
+                    <div id="test2-status">
+                        <span class="status-badge status-pending">
+                            <i class="fas fa-clock"></i> Pending
+                        </span>
+                    </div>
+                </div>
+                <div class="result-box d-none" id="test2-result"></div>
+            </div>
+
+            <!-- Test 3: Username Verification -->
+            <div class="test-card" id="test3">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5><i class="fas fa-user-check"></i> Test 3: Username Verification</h5>
+                        <p class="text-muted mb-0">Verify username exists and matches token</p>
+                    </div>
+                    <div id="test3-status">
+                        <span class="status-badge status-pending">
+                            <i class="fas fa-clock"></i> Pending
+                        </span>
+                    </div>
+                </div>
+                <div class="result-box d-none" id="test3-result"></div>
+            </div>
+
+            <!-- Test 4: List Tilesets -->
+            <div class="test-card" id="test4">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5><i class="fas fa-layer-group"></i> Test 4: List Tilesets</h5>
+                        <p class="text-muted mb-0">Try to list existing tilesets</p>
+                    </div>
+                    <div id="test4-status">
+                        <span class="status-badge status-pending">
+                            <i class="fas fa-clock"></i> Pending
+                        </span>
+                    </div>
+                </div>
+                <div class="result-box d-none" id="test4-result"></div>
+            </div>
+
+            <!-- Test 5: Source Upload Credentials -->
+            <div class="test-card" id="test5">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5><i class="fas fa-cloud-upload-alt"></i> Test 5: Upload Credentials</h5>
+                        <p class="text-muted mb-0">Test ability to get S3 upload credentials</p>
+                    </div>
+                    <div id="test5-status">
+                        <span class="status-badge status-pending">
+                            <i class="fas fa-clock"></i> Pending
+                        </span>
+                    </div>
+                </div>
+                <div class="result-box d-none" id="test5-result"></div>
+            </div>
+        </div>
+
+        <!-- API Endpoints Reference -->
+        <div class="test-card mt-4">
+            <h4><i class="fas fa-code"></i> API Endpoints Being Tested</h4>
+            <p class="text-muted">Click any endpoint to test it directly in your browser (requires token in URL)</p>
+            
+            <div class="table-responsive">
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>Endpoint</th>
+                            <th>Method</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>
+                                <code class="endpoint-link" id="tokenEndpoint">
+                                    https://api.mapbox.com/tokens/v2?access_token={token}
+                                </code>
+                            </td>
+                            <td><span class="badge bg-success">GET</span></td>
+                            <td>Validate token and get scopes</td>
+                        </tr>
+                        <tr>
+                            <td>
+                                <code class="endpoint-link" id="listEndpoint">
+                                    https://api.mapbox.com/tilesets/v1/{username}?access_token={token}
+                                </code>
+                            </td>
+                            <td><span class="badge bg-success">GET</span></td>
+                            <td>List user's tilesets</td>
+                        </tr>
+                        <tr>
+                            <td>
+                                <code class="endpoint-link" id="sourceEndpoint">
+                                    https://api.mapbox.com/tilesets/v1/sources/{username}/{source_id}/upload-credentials?access_token={token}
+                                </code>
+                            </td>
+                            <td><span class="badge bg-primary">POST</span></td>
+                            <td>Get S3 upload credentials</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Common Errors Reference -->
+        <div class="test-card mt-4">
+            <h4><i class="fas fa-exclamation-triangle"></i> Common Errors & Solutions</h4>
+            
+            <div class="accordion" id="errorAccordion">
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#error404">
+                            <strong>404 Not Found - "Failed to get upload credentials"</strong>
+                        </button>
+                    </h2>
+                    <div id="error404" class="accordion-collapse collapse" data-bs-parent="#errorAccordion">
+                        <div class="accordion-body">
+                            <div class="diagnostic-item">
+                                <div class="diagnostic-icon">🔍</div>
+                                <div>
+                                    <strong>Causes:</strong>
+                                    <ul>
+                                        <li>Incorrect username</li>
+                                        <li>Username doesn't match token owner</li>
+                                        <li>API endpoint has changed</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            <div class="diagnostic-item">
+                                <div class="diagnostic-icon">💡</div>
+                                <div>
+                                    <strong>Solutions:</strong>
+                                    <ol>
+                                        <li>Verify your username at <a href="https://account.mapbox.com/" target="_blank">account.mapbox.com</a></li>
+                                        <li>Ensure the token was created by the same account</li>
+                                        <li>Try regenerating the token</li>
+                                    </ol>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#error401">
+                            <strong>401 Unauthorized - "Invalid token"</strong>
+                        </button>
+                    </h2>
+                    <div id="error401" class="accordion-collapse collapse" data-bs-parent="#errorAccordion">
+                        <div class="accordion-body">
+                            <div class="diagnostic-item">
+                                <div class="diagnostic-icon">🔍</div>
+                                <div>
+                                    <strong>Causes:</strong>
+                                    <ul>
+                                        <li>Token is invalid or expired</li>
+                                        <li>Token was revoked</li>
+                                        <li>Using public token (pk.) instead of secret (sk.)</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            <div class="diagnostic-item">
+                                <div class="diagnostic-icon">💡</div>
+                                <div>
+                                    <strong>Solutions:</strong>
+                                    <ol>
+                                        <li>Create a new token with proper scopes</li>
+                                        <li>Ensure you're using a secret token (sk.)</li>
+                                        <li>Check for extra spaces when copying token</li>
+                                    </ol>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#error403">
+                            <strong>403 Forbidden - "Missing scopes"</strong>
+                        </button>
+                    </h2>
+                    <div id="error403" class="accordion-collapse collapse" data-bs-parent="#errorAccordion">
+                        <div class="accordion-body">
+                            <div class="diagnostic-item">
+                                <div class="diagnostic-icon">🔍</div>
+                                <div>
+                                    <strong>Causes:</strong>
+                                    <ul>
+                                        <li>Token lacks required MTS scopes</li>
+                                        <li>Trying to perform operation without permission</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            <div class="diagnostic-item">
+                                <div class="diagnostic-icon">💡</div>
+                                <div>
+                                    <strong>Solutions:</strong>
+                                    <ol>
+                                        <li>Create new token with: tilesets:write, tilesets:read, tilesets:list</li>
+                                        <li>Cannot add scopes to existing tokens - must create new</li>
+                                    </ol>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Auto-fill from URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const tokenFromUrl = urlParams.get('token');
+        const usernameFromUrl = urlParams.get('username');
+        
+        if (tokenFromUrl) document.getElementById('mapboxToken').value = tokenFromUrl;
+        if (usernameFromUrl) document.getElementById('mapboxUsername').value = usernameFromUrl;
+
+        // Common error patterns for NetCDF upload
+        const COMMON_ERRORS = {
+            "Not Found": {
+                cause: "The API endpoint or resource doesn't exist",
+                solutions: [
+                    "Verify your username is correct",
+                    "Check if the API endpoint has changed",
+                    "Ensure you're using the correct base URL"
+                ]
+            },
+            "Unauthorized": {
+                cause: "Token is invalid or lacks permissions",
+                solutions: [
+                    "Regenerate your token",
+                    "Ensure token has required scopes",
+                    "Check token hasn't expired"
+                ]
+            },
+            "Failed to get upload credentials": {
+                cause: "Cannot obtain S3 credentials for file upload",
+                solutions: [
+                    "Verify token has 'tilesets:write' scope",
+                    "Check if source ID already exists",
+                    "Ensure username matches token owner"
+                ]
+            }
+        };
+
+        // Comprehensive error analyzer
+        function analyzeError(error, response, testType) {
+            const errorAnalysis = {
+                status: response?.status,
+                statusText: response?.statusText,
+                message: error.message || 'Unknown error',
+                testType: testType,
+                timestamp: new Date().toISOString(),
+                diagnostics: [],
+                solutions: [],
+                relatedLinks: []
+            };
+
+            // Analyze based on status code
+            if (response) {
+                switch (response.status) {
+                    case 401:
+                        errorAnalysis.diagnostics.push('Authentication failed - Invalid or expired token');
+                        errorAnalysis.solutions.push('Verify your token is correct and hasn\'t expired');
+                        errorAnalysis.solutions.push('Make sure you\'re using a secret token (sk.) not a public token (pk.)');
+                        errorAnalysis.solutions.push('Check if the token has been rotated recently');
+                        errorAnalysis.relatedLinks.push({
+                            text: 'Create new token',
+                            url: 'https://account.mapbox.com/access-tokens/'
+                        });
+                        break;
+                    
+                    case 403:
+                        errorAnalysis.diagnostics.push('Permission denied - Token lacks required permissions');
+                        errorAnalysis.solutions.push('Your token needs additional scopes for this operation');
+                        errorAnalysis.solutions.push('Create a new token with tilesets:write, tilesets:read, and tilesets:list scopes');
+                        errorAnalysis.relatedLinks.push({
+                            text: 'Token scopes documentation',
+                            url: 'https://docs.mapbox.com/accounts/guides/tokens/#scopes'
+                        });
+                        break;
+                    
+                    case 404:
+                        if (testType === 'username') {
+                            errorAnalysis.diagnostics.push('Username not found or incorrect');
+                            errorAnalysis.solutions.push('Verify your Mapbox username is correct');
+                            errorAnalysis.solutions.push('Check your account dashboard for the correct username');
+                            errorAnalysis.solutions.push('Ensure the username matches the account that created the token');
+                        } else if (testType === 'source') {
+                            errorAnalysis.diagnostics.push('API endpoint not found - This might be normal for source creation');
+                            errorAnalysis.solutions.push('This is expected if the source doesn\'t exist yet');
+                        } else {
+                            errorAnalysis.diagnostics.push('Resource not found');
+                            errorAnalysis.solutions.push('Check if the API endpoint has changed');
+                        }
+                        errorAnalysis.relatedLinks.push({
+                            text: 'View your account',
+                            url: 'https://account.mapbox.com/'
+                        });
+                        break;
+                    
+                    case 422:
+                        errorAnalysis.diagnostics.push('Invalid request parameters');
+                        errorAnalysis.solutions.push('Check if the tileset ID or source ID format is correct');
+                        errorAnalysis.solutions.push('Ensure special characters are properly encoded');
+                        break;
+                    
+                    case 429:
+                        errorAnalysis.diagnostics.push('Rate limit exceeded');
+                        errorAnalysis.solutions.push('You\'ve made too many requests - wait a moment and try again');
+                        errorAnalysis.solutions.push('Consider implementing request throttling');
+                        break;
+                    
+                    case 500:
+                    case 502:
+                    case 503:
+                        errorAnalysis.diagnostics.push('Mapbox server error');
+                        errorAnalysis.solutions.push('This is a temporary issue on Mapbox\'s side');
+                        errorAnalysis.solutions.push('Wait a few minutes and try again');
+                        errorAnalysis.relatedLinks.push({
+                            text: 'Check Mapbox status',
+                            url: 'https://status.mapbox.com/'
+                        });
+                        break;
+                }
+            }
+
+            // Analyze specific error messages
+            const errorMessage = error.message?.toLowerCase() || '';
+            
+            if (errorMessage.includes('network')) {
+                errorAnalysis.diagnostics.push('Network connection issue');
+                errorAnalysis.solutions.push('Check your internet connection');
+                errorAnalysis.solutions.push('Verify firewall settings aren\'t blocking Mapbox API');
+                errorAnalysis.solutions.push('Try using a different network');
+            }
+            
+            if (errorMessage.includes('cors')) {
+                errorAnalysis.diagnostics.push('CORS (Cross-Origin Resource Sharing) issue');
+                errorAnalysis.solutions.push('This test might need to run from a server, not directly in browser');
+                errorAnalysis.solutions.push('Try using the API from your backend instead');
+            }
+            
+            if (errorMessage.includes('timeout')) {
+                errorAnalysis.diagnostics.push('Request timeout - took too long to respond');
+                errorAnalysis.solutions.push('Check your internet connection speed');
+                errorAnalysis.solutions.push('Mapbox servers might be experiencing high load');
+            }
+
+            // Token-specific analysis
+            if (testType === 'token' || testType === 'scopes') {
+                if (errorMessage.includes('invalid') || errorMessage.includes('malformed')) {
+                    errorAnalysis.diagnostics.push('Token format is invalid');
+                    errorAnalysis.solutions.push('Ensure you copied the entire token');
+                    errorAnalysis.solutions.push('Check for extra spaces or line breaks');
+                    errorAnalysis.solutions.push('Verify the token starts with "sk." for secret tokens');
+                }
+            }
+
+            return errorAnalysis;
+        }
+
+        // Enhanced result display with detailed error information
+        function showDetailedError(testNum, error, response, testType) {
+            const analysis = analyzeError(error, response, testType);
+            const resultEl = document.getElementById(`test${testNum}-result`);
+            resultEl.classList.remove('d-none');
+            
+            let html = `
+                <div class="error-details">
+                    <h6 class="text-danger mb-3">❌ Error Details</h6>
+                    
+                    <div class="mb-3">
+                        <strong>Error Message:</strong><br>
+                        <code class="text-danger">${analysis.message}</code>
+                    </div>
+                    
+                    ${analysis.status ? `
+                    <div class="mb-3">
+                        <strong>HTTP Status:</strong> ${analysis.status} ${analysis.statusText}
+                    </div>
+                    ` : ''}
+                    
+                    <div class="mb-3">
+                        <strong>🔍 Diagnostics:</strong>
+                        <ul class="mt-2">
+                            ${analysis.diagnostics.map(d => `<li>${d}</li>`).join('')}
+                        </ul>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <strong>💡 Suggested Solutions:</strong>
+                        <ol class="mt-2">
+                            ${analysis.solutions.map(s => `<li>${s}</li>`).join('')}
+                        </ol>
+                    </div>
+                    
+                    ${analysis.relatedLinks.length > 0 ? `
+                    <div class="mb-3">
+                        <strong>🔗 Helpful Links:</strong>
+                        <ul class="mt-2">
+                            ${analysis.relatedLinks.map(link => 
+                                `<li><a href="${link.url}" target="_blank" class="text-primary">${link.text} <i class="fas fa-external-link-alt fa-sm"></i></a></li>`
+                            ).join('')}
+                        </ul>
+                    </div>
+                    ` : ''}
+                    
+                    <div class="mt-3">
+                        <details>
+                            <summary class="text-muted cursor-pointer">Show raw error data</summary>
+                            <pre class="mt-2 p-2 bg-light rounded">${JSON.stringify({
+                                error: error.message,
+                                status: response?.status,
+                                statusText: response?.statusText,
+                                timestamp: analysis.timestamp
+                            }, null, 2)}</pre>
+                        </details>
+                    </div>
+                </div>
+            `;
+            
+            resultEl.innerHTML = html;
+        }
+
+        async function runAllTests() {
+            const token = document.getElementById('mapboxToken').value.trim();
+            const username = document.getElementById('mapboxUsername').value.trim();
+            
+            if (!token || !username) {
+                alert('Please enter both token and username');
+                return;
+            }
+
+            // Update endpoint examples
+            updateEndpoints(token, username);
+
+            // Reset all tests
+            for (let i = 1; i <= 5; i++) {
+                setTestStatus(i, 'pending', 'Running...');
+                document.getElementById(`test${i}-result`).classList.add('d-none');
+            }
+
+            // Run tests sequentially
+            await runTest1(token);
+            await runTest2(token);
+            await runTest3(token, username);
+            await runTest4(token, username);
+            await runTest5(token, username);
+        }
+
+        function updateEndpoints(token, username) {
+            document.getElementById('tokenEndpoint').textContent = 
+                `https://api.mapbox.com/tokens/v2?access_token=${token.substring(0, 20)}...`;
+            document.getElementById('listEndpoint').textContent = 
+                `https://api.mapbox.com/tilesets/v1/${username}?access_token=${token.substring(0, 20)}...`;
+            document.getElementById('sourceEndpoint').textContent = 
+                `https://api.mapbox.com/tilesets/v1/sources/${username}/test_source/upload-credentials?access_token=${token.substring(0, 20)}...`;
+        }
+
+        async function runTest1(token) {
+            try {
+                setTestStatus(1, 'running', 'Validating token format...');
+                
+                // Basic format check
+                if (!token.startsWith('sk.') && !token.startsWith('pk.')) {
+                    throw new Error('Token should start with "sk." for secret tokens or "pk." for public tokens');
+                }
+
+                if (token.length < 50) {
+                    throw new Error('Token appears to be too short');
+                }
+
+                setTestStatus(1, 'success', 'Valid format');
+                showResult(1, {
+                    status: 'success',
+                    message: 'Token format is valid',
+                    details: {
+                        type: token.startsWith('sk.') ? 'Secret token' : 'Public token',
+                        length: token.length,
+                        prefix: token.substring(0, 10) + '...'
+                    }
+                });
+            } catch (error) {
+                setTestStatus(1, 'error', 'Invalid format');
+                showResult(1, {
+                    status: 'error',
+                    message: error.message
+                });
+            }
+        }
+
+        async function runTest2(token) {
+            try {
+                setTestStatus(2, 'running', 'Checking token scopes...');
+                
+                const response = await fetch(`https://api.mapbox.com/tokens/v2?access_token=${token}`);
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw { 
+                        message: data.message || `HTTP ${response.status}: ${response.statusText}`,
+                        response: response,
+                        data: data
+                    };
+                }
+
+                const tokenInfo = data.token || {};
+                const scopes = tokenInfo.scopes || [];
+                const requiredScopes = ['tilesets:write', 'tilesets:read', 'tilesets:list'];
+                const optionalScopes = ['sources:write', 'sources:read'];
+                const missingRequired = requiredScopes.filter(s => !scopes.includes(s));
+                const missingOptional = optionalScopes.filter(s => !scopes.includes(s));
+
+                if (missingRequired.length > 0) {
+                    setTestStatus(2, 'error', 'Missing required scopes');
+                    
+                    const resultEl = document.getElementById('test2-result');
+                    resultEl.classList.remove('d-none');
+                    resultEl.innerHTML = `
+                        <div class="error-details">
+                            <h6 class="text-danger mb-3">❌ Missing Required Scopes</h6>
+                            
+                            <div class="mb-3">
+                                <strong>Current Scopes:</strong><br>
+                                <div class="mt-2">
+                                    ${scopes.map(s => `<span class="scope-badge ${requiredScopes.includes(s) ? 'has' : ''}">${s}</span>`).join('')}
+                                </div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <strong>Missing Required Scopes:</strong><br>
+                                <div class="mt-2">
+                                    ${missingRequired.map(s => `<span class="scope-badge required">${s}</span>`).join('')}
+                                </div>
+                            </div>
+                            
+                            ${missingOptional.length > 0 ? `
+                            <div class="warning-box">
+                                <strong>⚠️ Missing Optional Scopes:</strong><br>
+                                <div class="mt-2">
+                                    ${missingOptional.map(s => `<span class="scope-badge">${s}</span>`).join('')}
+                                </div>
+                                <small class="text-muted">These are recommended but not required</small>
+                            </div>
+                            ` : ''}
+                            
+                            <div class="mb-3">
+                                <strong>💡 How to Fix:</strong>
+                                <ol class="mt-2">
+                                    <li>Go to <a href="https://account.mapbox.com/access-tokens/" target="_blank">Mapbox Tokens</a></li>
+                                    <li>Click "Create a token"</li>
+                                    <li>Name it (e.g., "NetCDF Converter")</li>
+                                    <li>Under "Secret scopes", check these boxes:
+                                        <ul>
+                                            <li>✓ tilesets:write</li>
+                                            <li>✓ tilesets:read</li>
+                                            <li>✓ tilesets:list</li>
+                                            <li>✓ sources:write (optional)</li>
+                                            <li>✓ sources:read (optional)</li>
+                                        </ul>
+                                    </li>
+                                    <li>Click "Create token" and copy the new token</li>
+                                </ol>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    setTestStatus(2, 'success', 'All required scopes present');
+                    
+                    const resultEl = document.getElementById('test2-result');
+                    resultEl.classList.remove('d-none');
+                    resultEl.innerHTML = `
+                        <div class="success-details">
+                            <h6 class="text-success mb-3">✅ Token Has Required Scopes</h6>
+                            
+                            <div class="mb-3">
+                                <strong>Token Scopes:</strong><br>
+                                <div class="mt-2">
+                                    ${scopes.map(s => `<span class="scope-badge has">${s}</span>`).join('')}
+                                </div>
+                            </div>
+                            
+                            ${missingOptional.length > 0 ? `
+                            <div class="warning-box">
+                                <strong>ℹ️ Optional Scopes (not critical):</strong><br>
+                                <div class="mt-2">
+                                    ${missingOptional.map(s => `<span class="scope-badge">${s}</span>`).join('')}
+                                </div>
+                            </div>
+                            ` : ''}
+                            
+                            <div class="mb-3">
+                                <strong>Token Info:</strong><br>
+                                <small class="text-muted">
+                                    Created: ${tokenInfo.created || 'Unknown'}<br>
+                                    Modified: ${tokenInfo.modified || 'Unknown'}<br>
+                                    ${tokenInfo.note ? `Note: ${tokenInfo.note}` : ''}
+                                </small>
+                            </div>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                setTestStatus(2, 'error', 'Failed to check scopes');
+                showDetailedError(2, error, error.response, 'scopes');
+            }
+        }
+
+        async function runTest3(token, username) {
+            try {
+                setTestStatus(3, 'running', 'Verifying username...');
+                
+                const response = await fetch(`https://api.mapbox.com/tilesets/v1/${username}?limit=1&access_token=${token}`);
+                
+                if (response.status === 404) {
+                    throw {
+                        message: 'Username not found or does not match token',
+                        response: response
+                    };
+                }
+
+                if (!response.ok) {
+                    const data = await response.json();
+                    throw {
+                        message: data.message || 'Failed to verify username',
+                        response: response,
+                        data: data
+                    };
+                }
+
+                setTestStatus(3, 'success', 'Username verified');
+                showResult(3, {
+                    status: 'success',
+                    message: 'Username is valid and matches token',
+                    username: username
+                });
+            } catch (error) {
+                setTestStatus(3, 'error', 'Failed');
+                showDetailedError(3, error, error.response, 'username');
+            }
+        }
+
+        async function runTest4(token, username) {
+            try {
+                setTestStatus(4, 'running', 'Listing tilesets...');
+                
+                const response = await fetch(`https://api.mapbox.com/tilesets/v1/${username}?limit=5&access_token=${token}`);
+                const tilesets = await response.json();
+
+                if (!response.ok) {
+                    throw {
+                        message: tilesets.message || 'Failed to list tilesets',
+                        response: response,
+                        data: tilesets
+                    };
+                }
+
+                setTestStatus(4, 'success', `Found ${tilesets.length} tilesets`);
+                showResult(4, {
+                    status: 'success',
+                    message: `Successfully listed tilesets`,
+                    count: tilesets.length,
+                    tilesets: tilesets.map(ts => ({
+                        id: ts.id,
+                        name: ts.name,
+                        created: ts.created,
+                        modified: ts.modified
+                    }))
+                });
+            } catch (error) {
+                setTestStatus(4, 'error', 'Failed');
+                showDetailedError(4, error, error.response, 'list');
+            }
+        }
+
+        async function runTest5(token, username) {
+            try {
+                setTestStatus(5, 'running', 'Testing upload credentials...');
+                
+                const sourceId = `test_source_${Date.now()}`;
+                const response = await fetch(
+                    `https://api.mapbox.com/tilesets/v1/sources/${username}/${sourceId}/upload-credentials?access_token=${token}`,
+                    { method: 'POST' }
+                );
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw {
+                        message: data.message || 'Failed to get upload credentials',
+                        response: response,
+                        data: data
+                    };
+                }
+
+                setTestStatus(5, 'success', 'Can get credentials');
+                showResult(5, {
+                    status: 'success',
+                    message: 'Successfully obtained S3 upload credentials',
+                    credentials: {
+                        bucket: data.bucket,
+                        key: data.key ? data.key.substring(0, 20) + '...' : 'N/A',
+                        region: data.region || 'us-east-1'
+                    }
+                });
+            } catch (error) {
+                setTestStatus(5, 'error', 'Failed');
+                showDetailedError(5, error, error.response, 'source');
+            }
+        }
+
+        function setTestStatus(testNum, status, message) {
+            const statusEl = document.getElementById(`test${testNum}-status`);
+            const testCard = document.getElementById(`test${testNum}`);
+            
+            testCard.classList.remove('success', 'error');
+            
+            if (status === 'pending') {
+                statusEl.innerHTML = `<span class="status-badge status-pending"><i class="fas fa-clock"></i> ${message}</span>`;
+            } else if (status === 'running') {
+                statusEl.innerHTML = `<span class="status-badge status-pending"><span class="spinner"></span> ${message}</span>`;
+            } else if (status === 'success') {
+                statusEl.innerHTML = `<span class="status-badge status-success"><i class="fas fa-check"></i> ${message}</span>`;
+                testCard.classList.add('success');
+            } else if (status === 'error') {
+                statusEl.innerHTML = `<span class="status-badge status-error"><i class="fas fa-times"></i> ${message}</span>`;
+                testCard.classList.add('error');
+            }
+        }
+
+        function showResult(testNum, data) {
+            const resultEl = document.getElementById(`test${testNum}-result`);
+            resultEl.classList.remove('d-none');
+            
+            let html = '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
+            resultEl.innerHTML = html;
+        }
+
+        function clearResults() {
+            for (let i = 1; i <= 5; i++) {
+                setTestStatus(i, 'pending', 'Pending');
+                document.getElementById(`test${i}-result`).classList.add('d-none');
+                document.getElementById(`test${i}`).classList.remove('success', 'error');
+            }
+        }
+
+        function copyCode(button) {
+            const codeBlock = button.parentElement.querySelector('pre');
+            const text = codeBlock.textContent;
+            
+            navigator.clipboard.writeText(text).then(() => {
+                button.textContent = 'Copied!';
+                setTimeout(() => {
+                    button.textContent = 'Copy';
+                }, 2000);
+            });
+        }
+    </script>
+</body>
+</html>
