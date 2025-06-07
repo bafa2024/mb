@@ -18,28 +18,70 @@ from pathlib import Path
 import base64
 import io
 from PIL import Image
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from matplotlib.colors import Normalize
+import uuid
+import platform
+import shutil
 
 app = FastAPI()
 
 # Create necessary directories if they don't exist
 Path("static").mkdir(exist_ok=True)
 Path("templates").mkdir(exist_ok=True)
-Path("temp_files").mkdir(exist_ok=True)  # Use local temp directory instead of /tmp
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
-# Load Mapbox credentials from environment variables
+# Load Mapbox credentials from environment variables with better error handling
 MAPBOX_TOKEN = os.getenv("MAPBOX_SECRET_TOKEN", os.getenv("MAPBOX_TOKEN"))
-MAPBOX_PUBLIC_TOKEN = os.getenv("MAPBOX_PUBLIC_TOKEN")
+MAPBOX_PUBLIC_TOKEN = os.getenv("MAPBOX_PUBLIC_TOKEN", MAPBOX_TOKEN)
 MAPBOX_USERNAME = os.getenv("MAPBOX_USERNAME")
 
-# Use a local temp directory that we have permissions for
-TEMP_DIR = Path("temp_files")
-TEMP_DIR.mkdir(exist_ok=True)
+# Print credential status for debugging
+print("=" * 50)
+print("MAPBOX CREDENTIAL STATUS:")
+print(f"Token loaded: {'Yes' if MAPBOX_TOKEN else 'No'}")
+print(f"Token preview: {MAPBOX_TOKEN[:20] + '...' if MAPBOX_TOKEN else 'Not set'}")
+print(f"Username: {MAPBOX_USERNAME if MAPBOX_USERNAME else 'Not set'}")
+print("=" * 50)
+
+# Enhanced temp directory setup with fallbacks
+def setup_temp_directory():
+    """Setup temporary directory with multiple fallback options"""
+    temp_options = []
+    
+    # Option 1: Local temp_files directory
+    local_temp = Path("temp_files")
+    temp_options.append(local_temp)
+    
+    # Option 2: System temp directory
+    system_temp = Path(tempfile.gettempdir()) / "mapbox_netcdf" / str(uuid.uuid4())[:8]
+    temp_options.append(system_temp)
+    
+    # Option 3: User home directory
+    home_temp = Path.home() / ".mapbox_netcdf_temp"
+    temp_options.append(home_temp)
+    
+    for temp_dir in temp_options:
+        try:
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            # Test write permissions
+            test_file = temp_dir / "test_write.txt"
+            test_file.write_text("test")
+            test_file.unlink()
+            print(f"✓ Using temp directory: {temp_dir}")
+            return temp_dir
+        except Exception as e:
+            print(f"✗ Cannot use {temp_dir}: {e}")
+            continue
+    
+    raise RuntimeError("Could not create a writable temporary directory")
+
+TEMP_DIR = setup_temp_directory()
 
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
@@ -253,65 +295,20 @@ def prepare_netcdf_for_mapbox(nc_path: str, output_path: str) -> Dict:
         
         metadata["scalar_vars"] = [v for v in var_names if v not in vector_components]
         
-        ds.close()  # Close the dataset
+        ds.close()
         return metadata
         
     except Exception as e:
         print(f"Error preparing NetCDF: {str(e)}")
         raise
 
-def prepare_netcdf_for_mapbox_advanced(ds: xr.Dataset, output_path: str):
-    """
-    Advanced preparation of NetCDF for Mapbox with proper coordinate handling
-    """
-    # Ensure proper coordinate names and CRS
-    coord_mapping = {
-        'longitude': ['lon', 'long', 'x', 'LON', 'LONGITUDE'],
-        'latitude': ['lat', 'y', 'LAT', 'LATITUDE'],
-        'time': ['time', 'TIME', 't', 'datetime', 'DATE']
-    }
-    
-    for standard_name, alternatives in coord_mapping.items():
-        for alt in alternatives:
-            if alt in ds.dims or alt in ds.coords:
-                if alt != standard_name:
-                    ds = ds.rename({alt: standard_name})
-                break
-    
-    # Ensure all variables have proper CRS
-    for var in ds.data_vars:
-        if 'longitude' in ds[var].dims and 'latitude' in ds[var].dims:
-            try:
-                ds[var].rio.write_crs("EPSG:4326", inplace=True)
-                ds[var].rio.set_spatial_dims(x_dim="longitude", y_dim="latitude", inplace=True)
-            except Exception as e:
-                print(f"Warning: Could not set CRS for {var}: {e}")
-    
-    # Handle time dimension if present
-    if 'time' in ds.dims and len(ds.time) > 1:
-        # For now, select first time step
-        # In production, you might want to create separate bands for each time
-        ds = ds.isel(time=0)
-    
-    # Save with proper encoding
-    encoding = {}
-    for var in ds.data_vars:
-        encoding[var] = {
-            'dtype': 'float32',
-            'scale_factor': 0.01,
-            'add_offset': 0,
-            '_FillValue': -9999
-        }
-    
-    ds.to_netcdf(output_path, encoding=encoding)
-
 def create_preview_from_tif(tif_path: str, variable_name: str, colormap: str = 'viridis') -> str:
     """
     Create a PNG preview from a GeoTIFF file and return as base64
     """
     try:
-        # Open the raster
-        da = xr.open_rasterio(tif_path)
+        # Open the raster with rioxarray
+        da = rioxarray.open_rasterio(tif_path)
         
         # Get the data
         if len(da.shape) == 3:
@@ -319,11 +316,17 @@ def create_preview_from_tif(tif_path: str, variable_name: str, colormap: str = '
         else:
             data = da.values
         
+        # Handle NaN values
+        data = np.nan_to_num(data, nan=0.0)
+        
         # Create figure
         fig, ax = plt.subplots(figsize=(10, 8))
         
         # Normalize data for better visualization
-        vmin, vmax = np.nanpercentile(data, [2, 98])  # Use 2nd and 98th percentile
+        if data.size > 0 and not np.all(data == 0):
+            vmin, vmax = np.nanpercentile(data[data != 0], [2, 98]) if np.any(data != 0) else (0, 1)
+        else:
+            vmin, vmax = 0, 1
         
         # Create the plot
         im = ax.imshow(data, cmap=colormap, vmin=vmin, vmax=vmax, aspect='auto')
@@ -354,7 +357,8 @@ def create_preview_from_tif(tif_path: str, variable_name: str, colormap: str = '
         return img_base64
         
     except Exception as e:
-        print(f"Error creating preview: {e}")
+        print(f"Error creating preview from TIF: {e}")
+        traceback.print_exc()
         return None
 
 def create_animated_gif(nc_path: str, variable: str, output_path: str, 
@@ -381,15 +385,18 @@ def create_animated_gif(nc_path: str, variable: str, output_path: str,
         time_steps = len(da.time)
         
         # Determine global min/max for consistent colormap
-        vmin = float(da.min())
-        vmax = float(da.max())
+        data_values = da.values
+        data_values = np.nan_to_num(data_values, nan=0.0)
         
-        # Use percentiles for better visualization
-        vmin, vmax = np.nanpercentile(da.values, [2, 98])
+        if data_values.size > 0 and not np.all(data_values == 0):
+            vmin, vmax = np.nanpercentile(data_values[data_values != 0], [2, 98])
+        else:
+            vmin, vmax = 0, 1
         
         for t in range(min(time_steps, 24)):  # Limit to 24 frames for file size
             # Get data for this time step
             data = da.isel(time=t).values
+            data = np.nan_to_num(data, nan=0.0)
             
             # Create figure
             fig, ax = plt.subplots(figsize=(8, 6))
@@ -433,6 +440,7 @@ def create_animated_gif(nc_path: str, variable: str, output_path: str,
         
     except Exception as e:
         print(f"Error creating GIF: {e}")
+        traceback.print_exc()
         return False
 
 def generate_all_previews(prepared_path: str, metadata: Dict) -> Dict:
@@ -473,7 +481,8 @@ def generate_all_previews(prepared_path: str, metadata: Dict) -> Dict:
                         break
                 
                 # Create TIF file
-                out_tif = TEMP_DIR / f"{var}.tif"
+                session_id = str(uuid.uuid4())[:8]
+                out_tif = TEMP_DIR / f"{session_id}_{var}.tif"
                 try:
                     da.rio.to_raster(str(out_tif))
                     
@@ -484,112 +493,67 @@ def generate_all_previews(prepared_path: str, metadata: Dict) -> Dict:
                         preview_data[var] = {
                             'preview': preview_base64,
                             'has_tif': True,
+                            'tif_path': str(out_tif),
                             'colormap': cmap,
                             'stats': {
-                                'min': float(da.min()),
-                                'max': float(da.max()),
-                                'mean': float(da.mean())
+                                'min': float(np.nanmin(da.values)),
+                                'max': float(np.nanmax(da.values)),
+                                'mean': float(np.nanmean(da.values))
                             }
                         }
                         
                         # Check if we can create animated GIF
                         if 'time' in ds[var].dims and len(ds[var].time) > 1:
-                            gif_path = TEMP_DIR / f"{var}_animated.gif"
+                            gif_path = TEMP_DIR / f"{session_id}_{var}_animated.gif"
                             if create_animated_gif(prepared_path, var, str(gif_path), cmap):
                                 # Convert GIF to base64
                                 with open(gif_path, 'rb') as f:
                                     gif_base64 = base64.b64encode(f.read()).decode()
                                 preview_data[var]['animated_gif'] = gif_base64
+                                preview_data[var]['gif_path'] = str(gif_path)
                                 preview_data[var]['has_animation'] = True
                         
                 except Exception as e:
                     print(f"Warning: Could not create preview for {var}: {e}")
+                    traceback.print_exc()
         
         ds.close()
         return preview_data
         
     except Exception as e:
         print(f"Error generating previews: {e}")
+        traceback.print_exc()
         return {}
-
-def generate_preview_images(ds: xr.Dataset) -> Dict:
-    """
-    Generate base64-encoded preview images for visualization
-    """
-    preview_data = {}
-    
-    try:
-        # Generate previews for first few variables
-        for var in list(ds.data_vars)[:3]:
-            da = ds[var]
-            
-            # Handle time dimension
-            if 'time' in da.dims:
-                da = da.isel(time=0)
-            
-            # Convert to numpy array
-            data = da.values
-            
-            # Normalize to 0-255
-            data_min = np.nanmin(data)
-            data_max = np.nanmax(data)
-            if data_max > data_min:
-                normalized = ((data - data_min) / (data_max - data_min) * 255).astype(np.uint8)
-            else:
-                normalized = np.zeros_like(data, dtype=np.uint8)
-            
-            # Create image
-            img = Image.fromarray(normalized, mode='L')
-            
-            # Convert to base64
-            buffer = io.BytesIO()
-            img.save(buffer, format='PNG')
-            img_base64 = base64.b64encode(buffer.getvalue()).decode()
-            
-            # Get bounds
-            if 'longitude' in da.dims and 'latitude' in da.dims:
-                bounds = {
-                    'west': float(da.longitude.min()),
-                    'east': float(da.longitude.max()),
-                    'south': float(da.latitude.min()),
-                    'north': float(da.latitude.max())
-                }
-            else:
-                bounds = {'west': -180, 'east': 180, 'south': -90, 'north': 90}
-            
-            preview_data[var] = {
-                'data': img_base64,
-                'bounds': bounds,
-                'stats': {
-                    'min': float(data_min),
-                    'max': float(data_max),
-                    'mean': float(np.nanmean(data))
-                }
-            }
-            
-    except Exception as e:
-        print(f"Error generating previews: {e}")
-    
-    return preview_data
 
 def upload_to_mapbox_mts(token: str, username: str, nc_path: str, tileset_id: str, recipe: Dict) -> Dict:
     """
     Upload NetCDF to Mapbox using MTS API with recipe.
     """
     try:
+        # Validate credentials
+        if not token or not username:
+            raise ValueError("Mapbox token and username are required")
+        
         # Step 1: Create tileset source
         source_id = f"{tileset_id}_source"
         
         # Get S3 credentials for source upload
         cred_url = f"https://api.mapbox.com/tilesets/v1/sources/{username}/{source_id}/upload-credentials?access_token={token}"
+        
+        print(f"Getting upload credentials from: {cred_url}")
         cred_resp = requests.post(cred_url)
         
         if cred_resp.status_code != 200:
-            raise Exception(f"Failed to get upload credentials: {cred_resp.text}")
+            error_msg = f"Failed to get upload credentials: {cred_resp.status_code} - {cred_resp.text}"
+            print(error_msg)
+            if cred_resp.status_code == 401:
+                error_msg += "\n\nPlease check:\n1. Your Mapbox token is valid\n2. Token has 'tilesets:write' scope\n3. Username is correct"
+            raise Exception(error_msg)
         
         creds = cred_resp.json()
         
         # Upload to S3
+        print("Uploading to S3...")
         s3_client = boto3.client(
             's3',
             aws_access_key_id=creds['accessKeyId'],
@@ -605,6 +569,8 @@ def upload_to_mapbox_mts(token: str, username: str, nc_path: str, tileset_id: st
                 Body=f
             )
         
+        print("Upload to S3 completed")
+        
         # Step 2: Create tileset with recipe
         tileset_url = f"https://api.mapbox.com/tilesets/v1/{username}.{tileset_id}?access_token={token}"
         tileset_data = {
@@ -613,21 +579,29 @@ def upload_to_mapbox_mts(token: str, username: str, nc_path: str, tileset_id: st
             "description": "Multi-variable weather data with vector and scalar fields"
         }
         
+        print(f"Creating tileset: {username}.{tileset_id}")
         create_resp = requests.post(tileset_url, json=tileset_data)
+        
         if create_resp.status_code not in [200, 201]:
             # Try updating if already exists
-            update_resp = requests.patch(tileset_url, json={"recipe": recipe})
-            if update_resp.status_code != 200:
-                raise Exception(f"Failed to create/update tileset: {update_resp.text}")
+            if create_resp.status_code == 409:
+                print("Tileset exists, updating...")
+                update_resp = requests.patch(tileset_url, json={"recipe": recipe})
+                if update_resp.status_code != 200:
+                    raise Exception(f"Failed to update tileset: {update_resp.text}")
+            else:
+                raise Exception(f"Failed to create tileset: {create_resp.text}")
         
         # Step 3: Publish tileset
         publish_url = f"https://api.mapbox.com/tilesets/v1/{username}.{tileset_id}/publish?access_token={token}"
+        print("Publishing tileset...")
         publish_resp = requests.post(publish_url)
         
         if publish_resp.status_code != 200:
             raise Exception(f"Failed to publish tileset: {publish_resp.text}")
         
         job_id = publish_resp.json().get('jobId')
+        print(f"Publishing started with job ID: {job_id}")
         
         return {
             "tileset_id": f"{username}.{tileset_id}",
@@ -645,33 +619,57 @@ async def process_file(
     file: UploadFile = File(...),
     mapbox_token: Optional[str] = Form(None),
     mapbox_username: Optional[str] = Form(None),
-    upload_to_mapbox: bool = Form(False),
-    create_recipe: bool = Form(False),
-    generate_previews: bool = Form(True)  # New parameter
+    upload_to_mapbox: bool = Form(True),
+    create_recipe: bool = Form(True),
+    generate_previews: bool = Form(True)
 ):
+    """
+    Process NetCDF file with enhanced error handling
+    """
     filepath = None
     prepared_path = None
+    session_id = str(uuid.uuid4())[:8]
     
     try:
-        # Use provided credentials or fall back to environment variables
+        # Use environment variables if not provided
         token = mapbox_token or MAPBOX_TOKEN
         username = mapbox_username or MAPBOX_USERNAME
         
-        # Save uploaded NetCDF file to our temp directory
+        # Debug info
+        print(f"\n{'='*50}")
         print(f"Processing file: {file.filename}")
+        print(f"Session ID: {session_id}")
+        print(f"Temp directory: {TEMP_DIR}")
+        print(f"Mapbox upload: {upload_to_mapbox}")
+        print(f"Credentials available: {bool(token and username)}")
+        print(f"{'='*50}\n")
         
-        # Use our local temp directory
-        filepath = TEMP_DIR / file.filename
+        # Create safe filename
+        safe_filename = re.sub(r'[^a-zA-Z0-9._-]', '_', file.filename)
+        filepath = TEMP_DIR / f"{session_id}_{safe_filename}"
         
-        # Save the file
-        with open(filepath, "wb") as f:
+        # Save uploaded file with proper error handling
+        print(f"Saving file to: {filepath}")
+        try:
             content = await file.read()
-            f.write(content)
-            print(f"Saved file to: {filepath}, size: {len(content)} bytes")
+            with open(filepath, "wb") as f:
+                f.write(content)
+                f.flush()
+                if platform.system() != 'Windows':
+                    os.fsync(f.fileno())
+            print(f"File saved successfully, size: {len(content)} bytes")
+        except Exception as e:
+            print(f"Error saving file: {e}")
+            traceback.print_exc()
+            raise Exception(f"Failed to save uploaded file: {str(e)}")
         
         # Prepare NetCDF
-        prepared_path = TEMP_DIR / f"prepared_{file.filename}"
+        prepared_filename = f"{session_id}_prepared_{safe_filename}"
+        prepared_path = TEMP_DIR / prepared_filename
+        
+        print(f"Preparing NetCDF file...")
         metadata = prepare_netcdf_for_mapbox(str(filepath), str(prepared_path))
+        print(f"NetCDF prepared with {len(metadata['variables'])} variables")
         
         # Create response
         response_data = {
@@ -682,47 +680,55 @@ async def process_file(
         
         # Generate previews if requested
         if generate_previews:
+            print("Generating previews...")
             preview_data = generate_all_previews(str(prepared_path), metadata)
             response_data["previews"] = preview_data
             response_data["has_previews"] = len(preview_data) > 0
+            print(f"Generated {len(preview_data)} previews")
         
         # Generate GeoTIFF for each variable (for download)
         ds = xr.open_dataset(str(prepared_path))
         generated_files = []
         
-        for var in metadata["variables"][:6]:  # Increased limit
+        for var in metadata["variables"][:6]:  # Limit to first 6
             if var in ds.data_vars:
                 da = ds[var]
                 if 'time' in da.dims:
                     da = da.isel(time=0)
                 
-                out_tif = TEMP_DIR / f"{var}.tif"
-                if not out_tif.exists():  # Don't regenerate if already created
+                out_tif = TEMP_DIR / f"{session_id}_{var}.tif"
+                if not out_tif.exists():
                     try:
                         da.rio.to_raster(str(out_tif))
-                        generated_files.append(var)
+                        generated_files.append({
+                            'name': var,
+                            'path': str(out_tif)
+                        })
                     except Exception as e:
                         print(f"Warning: Could not create GeoTIFF for {var}: {e}")
-                else:
-                    generated_files.append(var)
         
         ds.close()
         
-        response_data["generated_files"] = generated_files
+        response_data["generated_files"] = [f['name'] for f in generated_files]
+        response_data["session_id"] = session_id
         
-        # Rest of the Mapbox upload code remains the same...
+        # Upload to Mapbox if requested and credentials available
         if upload_to_mapbox and create_recipe:
             if not token or not username:
-                response_data["message"] += "<br>⚠️ Mapbox upload requires credentials."
+                response_data["message"] += "<br><br>⚠️ Mapbox upload skipped: No credentials configured.<br>To enable upload, set MAPBOX_TOKEN and MAPBOX_USERNAME in your .env file."
+                response_data["mapbox_upload"] = False
             else:
                 try:
                     # Create tileset ID
                     tileset_id = re.sub(r'[^a-zA-Z0-9_-]', '_', 
                                       os.path.splitext(file.filename)[0].lower())[:32]
+                    tileset_id = f"{session_id}_{tileset_id}"  # Make unique
                     
+                    print(f"Creating recipe for tileset: {tileset_id}")
                     # Create recipe
                     recipe = create_recipe_for_netcdf(str(prepared_path), tileset_id, username)
                     
+                    print("Uploading to Mapbox...")
                     # Upload with MTS
                     upload_result = upload_to_mapbox_mts(token, username, str(prepared_path), tileset_id, recipe)
                     
@@ -740,16 +746,29 @@ async def process_file(
                     """
                     
                     # Save recipe for download
-                    recipe_path = TEMP_DIR / f"recipe_{tileset_id}.json"
+                    recipe_path = TEMP_DIR / f"{session_id}_recipe_{tileset_id}.json"
                     with open(recipe_path, 'w') as f:
                         json.dump(recipe, f, indent=2)
                     
-                    response_data["recipe_download"] = f"/download-recipe/{tileset_id}"
+                    response_data["recipe_download"] = f"/download-recipe/{session_id}/{tileset_id}"
                     response_data["visualization_url"] = f"/visualize/{tileset_id}"
                     
                 except Exception as e:
-                    response_data["message"] += f"<br>⚠️ Mapbox upload failed: {str(e)}"
-                    response_data["mapbox_error"] = str(e)
+                    error_msg = str(e)
+                    print(f"Mapbox upload error: {error_msg}")
+                    traceback.print_exc()
+                    
+                    if "401" in error_msg or "Unauthorized" in error_msg:
+                        response_data["message"] += f"""<br><br>⚠️ Mapbox authentication failed.<br>
+                        Please check:
+                        <br>1. Your token is valid
+                        <br>2. Token has 'tilesets:write' scope
+                        <br>3. Username is correct"""
+                    else:
+                        response_data["message"] += f"<br><br>⚠️ Mapbox upload failed: {error_msg}"
+                    
+                    response_data["mapbox_error"] = error_msg
+                    response_data["mapbox_upload"] = False
         
         return JSONResponse(response_data)
         
@@ -762,165 +781,35 @@ async def process_file(
         }, status_code=500)
     
     finally:
-        # Clean up temporary files after a delay (optional)
-        # You might want to keep them for download purposes
-        pass
+        # Clean up old files (older than 1 hour)
+        try:
+            cleanup_old_files(max_age_hours=1)
+        except:
+            pass
 
-@app.post("/process-advanced")
-async def process_file_advanced(
-    file: UploadFile = File(...),
-    mapbox_token: Optional[str] = Form(None),
-    mapbox_username: Optional[str] = Form(None),
-    upload_to_mapbox: bool = Form(True),
-    create_recipe: bool = Form(True),
-    enable_queries: bool = Form(False),
-    temporal_start: Optional[str] = Form(None),
-    temporal_end: Optional[str] = Form(None),
-    spatial_bounds: Optional[str] = Form(None)  # Format: "west,south,east,north"
-):
-    """
-    Advanced processing with query support and tileset management
-    """
-    filepath = None
-    prepared_path = None
-    
-    try:
-        # Use provided credentials or fall back to environment variables
-        token = mapbox_token or MAPBOX_TOKEN
-        username = mapbox_username or MAPBOX_USERNAME
-        
-        # Save uploaded NetCDF file
-        filepath = TEMP_DIR / file.filename
-        with open(filepath, "wb") as f:
-            content = await file.read()
-            f.write(content)
-        
-        # Open dataset for analysis
-        ds = xr.open_dataset(str(filepath))
-        
-        # Apply queries if requested
-        if enable_queries:
-            # Temporal query
-            if temporal_start or temporal_end:
-                from tileset_management import TilesetQueryTools
-                ds = TilesetQueryTools.query_temporal_range(ds, temporal_start, temporal_end)
-            
-            # Spatial query
-            if spatial_bounds:
-                bounds = [float(x) for x in spatial_bounds.split(',')]
-                if len(bounds) == 4:
-                    from tileset_management import TilesetQueryTools
-                    ds = TilesetQueryTools.query_spatial_bounds(ds, *bounds)
-        
-        # Compute statistics
-        from tileset_management import TilesetQueryTools
-        statistics = TilesetQueryTools.compute_statistics(ds)
-        
-        # Prepare for Mapbox
-        prepared_path = TEMP_DIR / f"prepared_{file.filename}"
-        prepare_netcdf_for_mapbox_advanced(ds, str(prepared_path))
-        
-        # Generate preview images for variables
-        preview_data = generate_preview_images(ds)
-        
-        response_data = {
-            "success": True,
-            "statistics": statistics,
-            "preview_data": preview_data,
-            "message": f"Successfully processed {file.filename}"
-        }
-        
-        # Upload to Mapbox if requested
-        if upload_to_mapbox and token and username:
-            tileset_id = re.sub(r'[^a-zA-Z0-9_-]', '_', 
-                              os.path.splitext(file.filename)[0].lower())[:32]
-            
-            # Create recipe
-            recipe = create_recipe_for_netcdf(str(prepared_path), tileset_id, username)
-            
-            # Use tileset manager
-            from tileset_management import MapboxTilesetManager
-            manager = MapboxTilesetManager(token, username)
-            
-            result = manager.process_netcdf_to_tileset(str(prepared_path), tileset_id, recipe)
-            
-            if result['success']:
-                response_data["mapbox_upload"] = True
-                response_data["tileset_id"] = result['tileset_id']
-                response_data["job_id"] = result.get('job_id')
-                response_data["recipe"] = recipe
-                response_data["visualization_url"] = f"/visualize/{tileset_id}"
-                
-                # Save recipe for later reference
-                recipe_path = TEMP_DIR / f"recipe_{tileset_id}.json"
-                with open(recipe_path, 'w') as f:
-                    json.dump(recipe, f, indent=2)
-            else:
-                response_data["mapbox_error"] = result.get('error')
-        
-        ds.close()
-        return JSONResponse(response_data)
-        
-    except Exception as e:
-        print(f"Error processing file: {str(e)}")
-        traceback.print_exc()
-        return JSONResponse({
-            "success": False,
-            "message": f"Error processing file: {str(e)}"
-        }, status_code=500)
-
-@app.get("/visualize/{tileset_id}")
-async def visualize_tileset(request: Request, tileset_id: str):
-    """
-    Display multi-variable visualization page for a tileset
-    """
-    # Get recipe data if available
-    recipe_path = TEMP_DIR / f"recipe_{tileset_id}.json"
-    if recipe_path.exists():
-        with open(recipe_path, 'r') as f:
-            recipe = json.load(f)
-    else:
-        recipe = {}
-    
-    # Use public token for visualization
-    public_token = MAPBOX_PUBLIC_TOKEN or MAPBOX_TOKEN
-    
-    return templates.TemplateResponse("multi_variable_visualization.html", {
-        "request": request,
-        "tileset_id": f"{MAPBOX_USERNAME}.{tileset_id}",
-        "mapbox_token": public_token,
-        "recipe": recipe
-    })
-
-@app.get("/download-tif/{variable}")
-async def download_tif(variable: str):
+@app.get("/download-tif/{session_id}/{variable}")
+async def download_tif(session_id: str, variable: str):
     """Download a specific variable as GeoTIFF."""
-    tif_path = TEMP_DIR / f"{variable}.tif"
-    if tif_path.exists():
-        return FileResponse(
-            str(tif_path),
-            filename=f"{variable}.tif",
-            media_type="image/tiff"
-        )
+    # Try multiple possible filenames
+    possible_files = [
+        TEMP_DIR / f"{session_id}_{variable}.tif",
+        TEMP_DIR / f"{variable}.tif"
+    ]
+    
+    for tif_path in possible_files:
+        if tif_path.exists():
+            return FileResponse(
+                str(tif_path),
+                filename=f"{variable}.tif",
+                media_type="image/tiff"
+            )
+    
     return JSONResponse({"message": "GeoTIFF not found."}, status_code=404)
 
-@app.get("/download-recipe/{tileset_id}")
-async def download_recipe(tileset_id: str):
-    """Download the Mapbox recipe JSON."""
-    recipe_path = TEMP_DIR / f"recipe_{tileset_id}.json"
-    if recipe_path.exists():
-        return FileResponse(
-            str(recipe_path),
-            filename=f"recipe_{tileset_id}.json",
-            media_type="application/json"
-        )
-    return JSONResponse({"message": "Recipe not found."}, status_code=404)
-
-# Add new endpoint for downloading animated GIFs
-@app.get("/download-gif/{variable}")
-async def download_gif(variable: str):
+@app.get("/download-gif/{session_id}/{variable}")
+async def download_gif(session_id: str, variable: str):
     """Download animated GIF for a variable."""
-    gif_path = TEMP_DIR / f"{variable}_animated.gif"
+    gif_path = TEMP_DIR / f"{session_id}_{variable}_animated.gif"
     if gif_path.exists():
         return FileResponse(
             str(gif_path),
@@ -929,28 +818,55 @@ async def download_gif(variable: str):
         )
     return JSONResponse({"message": "Animated GIF not found."}, status_code=404)
 
-# Add endpoint to get preview image
-@app.get("/preview/{variable}")
-async def get_preview(variable: str):
-    """Get preview image for a variable."""
-    # First try to find a generated preview PNG
-    preview_path = TEMP_DIR / f"{variable}_preview.png"
-    if preview_path.exists():
+@app.get("/download-recipe/{session_id}/{tileset_id}")
+async def download_recipe(session_id: str, tileset_id: str):
+    """Download the Mapbox recipe JSON."""
+    recipe_path = TEMP_DIR / f"{session_id}_recipe_{tileset_id}.json"
+    if recipe_path.exists():
         return FileResponse(
-            str(preview_path),
-            media_type="image/png"
+            str(recipe_path),
+            filename=f"recipe_{tileset_id}.json",
+            media_type="application/json"
         )
-    
-    # If not found, try to generate from TIF
-    tif_path = TEMP_DIR / f"{variable}.tif"
+    return JSONResponse({"message": "Recipe not found."}, status_code=404)
+
+@app.get("/preview/{session_id}/{variable}")
+async def get_preview(session_id: str, variable: str):
+    """Get preview image for a variable."""
+    # Try to find TIF and generate preview
+    tif_path = TEMP_DIR / f"{session_id}_{variable}.tif"
     if tif_path.exists():
         preview_base64 = create_preview_from_tif(str(tif_path), variable)
         if preview_base64:
-            # Convert base64 back to bytes and return
             img_data = base64.b64decode(preview_base64)
             return Response(content=img_data, media_type="image/png")
     
     return JSONResponse({"message": "Preview not found."}, status_code=404)
+
+@app.get("/visualize/{tileset_id}")
+async def visualize_tileset(request: Request, tileset_id: str):
+    """
+    Display multi-variable visualization page for a tileset
+    """
+    # Look for recipe file
+    recipe = {}
+    for file in TEMP_DIR.glob(f"*_recipe_{tileset_id}.json"):
+        try:
+            with open(file, 'r') as f:
+                recipe = json.load(f)
+                break
+        except:
+            pass
+    
+    # Use public token for visualization
+    public_token = MAPBOX_PUBLIC_TOKEN or MAPBOX_TOKEN
+    
+    return templates.TemplateResponse("multi_variable_visualization.html", {
+        "request": request,
+        "tileset_id": f"{MAPBOX_USERNAME}.{tileset_id}" if MAPBOX_USERNAME else tileset_id,
+        "mapbox_token": public_token,
+        "recipe": recipe
+    })
 
 @app.get("/check-job/{job_id}")
 async def check_job(job_id: str, username: str = None, token: str = None):
@@ -958,6 +874,9 @@ async def check_job(job_id: str, username: str = None, token: str = None):
     try:
         username = username or MAPBOX_USERNAME
         token = token or MAPBOX_TOKEN
+        
+        if not username or not token:
+            return JSONResponse({"error": "Mapbox credentials not configured"}, status_code=400)
         
         status_url = f"https://api.mapbox.com/tilesets/v1/{username}/jobs/{job_id}?access_token={token}"
         resp = requests.get(status_url)
@@ -970,112 +889,6 @@ async def check_job(job_id: str, username: str = None, token: str = None):
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
-@app.get("/demo")
-async def demo_page(request: Request):
-    """Demo page showing how to visualize the tileset in Mapbox GL JS."""
-    return templates.TemplateResponse("demo.html", {"request": request})
-
-@app.get("/api/tileset-info/{tileset_id}")
-async def get_tileset_info(tileset_id: str):
-    """
-    Get information about a tileset including available layers and statistics
-    """
-    try:
-        # Load recipe if available
-        recipe_path = TEMP_DIR / f"recipe_{tileset_id}.json"
-        if recipe_path.exists():
-            with open(recipe_path, 'r') as f:
-                recipe = json.load(f)
-                
-            return JSONResponse({
-                "success": True,
-                "recipe": recipe,
-                "bands": recipe.get("metadata", {}).get("all_bands", {}),
-                "vector_pairs": recipe.get("metadata", {}).get("vector_pairs", []),
-                "scalar_variables": recipe.get("metadata", {}).get("scalar_variables", [])
-            })
-        else:
-            return JSONResponse({
-                "success": False,
-                "message": "Recipe not found"
-            }, status_code=404)
-            
-    except Exception as e:
-        return JSONResponse({
-            "success": False,
-            "message": str(e)
-        }, status_code=500)
-
-@app.post("/api/query-tileset")
-async def query_tileset(
-    tileset_id: str = Form(...),
-    query_type: str = Form(...),  # 'statistics', 'temporal', 'spatial'
-    parameters: str = Form("{}")   # JSON string with query parameters
-):
-    """
-    Perform queries on tileset data
-    """
-    try:
-        params = json.loads(parameters)
-        
-        # This would typically query the actual tileset data
-        # For demonstration, we'll return sample results
-        
-        if query_type == "statistics":
-            return JSONResponse({
-                "success": True,
-                "query_type": query_type,
-                "results": {
-                    "temperature": {
-                        "min": -10.5,
-                        "max": 35.2,
-                        "mean": 15.7,
-                        "std": 8.3
-                    },
-                    "wind_speed": {
-                        "min": 0,
-                        "max": 25.5,
-                        "mean": 8.2,
-                        "std": 4.1
-                    }
-                }
-            })
-        
-        elif query_type == "temporal":
-            return JSONResponse({
-                "success": True,
-                "query_type": query_type,
-                "results": {
-                    "time_range": params.get("time_range", ["2024-01-01", "2024-12-31"]),
-                    "data_points": 365,
-                    "temporal_resolution": "daily"
-                }
-            })
-        
-        elif query_type == "spatial":
-            bounds = params.get("bounds", [-180, -90, 180, 90])
-            return JSONResponse({
-                "success": True,
-                "query_type": query_type,
-                "results": {
-                    "bounds": bounds,
-                    "grid_points": 10000,
-                    "spatial_resolution": "0.25 degrees"
-                }
-            })
-        
-        else:
-            return JSONResponse({
-                "success": False,
-                "message": f"Unknown query type: {query_type}"
-            }, status_code=400)
-            
-    except Exception as e:
-        return JSONResponse({
-            "success": False,
-            "message": str(e)
-        }, status_code=500)
-
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
@@ -1084,23 +897,29 @@ async def health_check():
         "mapbox_configured": bool(MAPBOX_TOKEN and MAPBOX_USERNAME),
         "temp_dir": str(TEMP_DIR),
         "temp_dir_exists": TEMP_DIR.exists(),
-        "temp_dir_writable": os.access(TEMP_DIR, os.W_OK)
+        "temp_dir_writable": os.access(TEMP_DIR, os.W_OK),
+        "credentials": {
+            "token_set": bool(MAPBOX_TOKEN),
+            "username_set": bool(MAPBOX_USERNAME)
+        }
     }
 
-# Cleanup old temp files on startup (optional)
-def cleanup_old_files():
-    """Remove temp files older than 1 hour."""
+# Cleanup old temp files
+def cleanup_old_files(max_age_hours: int = 1):
+    """Remove temp files older than specified hours."""
     try:
-        import time
         current_time = time.time()
         for file_path in TEMP_DIR.glob("*"):
             if file_path.is_file():
-                file_age = current_time - file_path.stat().st_mtime
-                if file_age > 3600:  # 1 hour
-                    file_path.unlink()
-                    print(f"Cleaned up old file: {file_path}")
+                file_age_hours = (current_time - file_path.stat().st_mtime) / 3600
+                if file_age_hours > max_age_hours:
+                    try:
+                        file_path.unlink()
+                        print(f"Cleaned up old file: {file_path.name}")
+                    except:
+                        pass
     except Exception as e:
         print(f"Error during cleanup: {e}")
 
 # Run cleanup on startup
-cleanup_old_files()
+cleanup_old_files(max_age_hours=24)  # Clean files older than 24 hours on startup
