@@ -1,0 +1,1140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weather Visualization Platform</title>
+    <script src='https://api.mapbox.com/mapbox-gl-js/v3.5.1/mapbox-gl.js'></script>
+    <link href='https://api.mapbox.com/mapbox-gl-js/v3.5.1/mapbox-gl.css' rel='stylesheet' />
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            overflow: hidden;
+            background: #0a0a0a;
+        }
+        
+        #map {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 100%;
+        }
+        
+        /* Header Bar */
+        .header-bar {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 60px;
+            background: rgba(0, 0, 0, 0.9);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            z-index: 1000;
+        }
+        
+        .header-title {
+            color: white;
+            font-size: 20px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .header-actions {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+        
+        /* Control Panel */
+        .control-panel {
+            position: absolute;
+            top: 80px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.85);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.6);
+            color: white;
+            width: 320px;
+            max-height: calc(100vh - 100px);
+            overflow-y: auto;
+            backdrop-filter: blur(10px);
+            z-index: 999;
+            transition: transform 0.3s ease;
+        }
+        
+        .control-panel.collapsed {
+            transform: translateX(340px);
+        }
+        
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        
+        .panel-title {
+            font-size: 18px;
+            font-weight: 600;
+        }
+        
+        /* Buttons */
+        .btn {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .btn:hover {
+            background: #2563eb;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        }
+        
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+        
+        .btn-success {
+            background: #10b981;
+        }
+        
+        .btn-success:hover {
+            background: #059669;
+        }
+        
+        .btn-icon {
+            background: transparent;
+            padding: 8px;
+            font-size: 18px;
+        }
+        
+        /* Upload Modal */
+        .upload-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 2000;
+            backdrop-filter: blur(5px);
+        }
+        
+        .upload-modal.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal-content {
+            background: #1a1a1a;
+            border-radius: 16px;
+            padding: 30px;
+            width: 90%;
+            max-width: 600px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.8);
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+        }
+        
+        .modal-title {
+            font-size: 24px;
+            font-weight: 600;
+            color: white;
+        }
+        
+        /* Drop Zone */
+        .drop-zone {
+            border: 2px dashed rgba(59, 130, 246, 0.5);
+            border-radius: 12px;
+            padding: 40px;
+            text-align: center;
+            transition: all 0.3s;
+            cursor: pointer;
+            background: rgba(59, 130, 246, 0.05);
+            margin-bottom: 20px;
+        }
+        
+        .drop-zone:hover,
+        .drop-zone.dragover {
+            border-color: #3b82f6;
+            background: rgba(59, 130, 246, 0.1);
+            transform: scale(1.02);
+        }
+        
+        .drop-zone-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.6;
+        }
+        
+        /* Layer Controls */
+        .layer-section {
+            margin-bottom: 20px;
+        }
+        
+        .layer-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #8b95a5;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .layer-item {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 10px;
+            transition: all 0.2s;
+            cursor: pointer;
+            border: 1px solid transparent;
+        }
+        
+        .layer-item:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(59, 130, 246, 0.5);
+        }
+        
+        .layer-item.active {
+            background: rgba(59, 130, 246, 0.2);
+            border-color: #3b82f6;
+        }
+        
+        .layer-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .layer-name {
+            font-weight: 500;
+        }
+        
+        .layer-type {
+            font-size: 12px;
+            color: #6b7280;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+        
+        /* Sliders */
+        .slider-container {
+            margin: 15px 0;
+        }
+        
+        .slider-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: #8b95a5;
+            margin-bottom: 5px;
+        }
+        
+        .slider {
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: rgba(255, 255, 255, 0.1);
+            outline: none;
+            -webkit-appearance: none;
+        }
+        
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #3b82f6;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        /* Legend */
+        .legend {
+            position: absolute;
+            bottom: 30px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.85);
+            border-radius: 12px;
+            padding: 20px;
+            color: white;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.6);
+            backdrop-filter: blur(10px);
+            max-width: 300px;
+            z-index: 500;
+        }
+        
+        .legend-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .legend-gradient {
+            width: 100%;
+            height: 24px;
+            border-radius: 4px;
+            margin-bottom: 8px;
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.3);
+        }
+        
+        .legend-labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            color: #8b95a5;
+        }
+        
+        /* Info Panel */
+        .info-panel {
+            position: absolute;
+            bottom: 30px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.85);
+            border-radius: 10px;
+            padding: 15px 20px;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.6);
+            backdrop-filter: blur(10px);
+            font-size: 13px;
+            color: white;
+            z-index: 500;
+        }
+        
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 5px 0;
+            min-width: 200px;
+        }
+        
+        .info-label {
+            color: #8b95a5;
+        }
+        
+        .info-value {
+            font-weight: 600;
+            margin-left: 12px;
+        }
+        
+        /* Loading Spinner */
+        .loading {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 3000;
+        }
+        
+        .loading.active {
+            display: block;
+        }
+        
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-top-color: #3b82f6;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        /* Notifications */
+        .notification {
+            position: fixed;
+            top: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            padding: 15px 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            z-index: 3000;
+            animation: slideDown 0.3s ease;
+        }
+        
+        @keyframes slideDown {
+            from {
+                transform: translateX(-50%) translateY(-20px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(-50%) translateY(0);
+                opacity: 1;
+            }
+        }
+        
+        .notification.success {
+            border-left: 4px solid #10b981;
+        }
+        
+        .notification.error {
+            border-left: 4px solid #ef4444;
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .control-panel {
+                width: 100%;
+                right: 0;
+                left: 0;
+                bottom: 0;
+                top: auto;
+                max-height: 50vh;
+                border-radius: 20px 20px 0 0;
+            }
+            
+            .control-panel.collapsed {
+                transform: translateY(100%);
+            }
+            
+            .header-bar {
+                padding: 0 10px;
+            }
+            
+            .header-title {
+                font-size: 16px;
+            }
+            
+            .legend {
+                display: none;
+            }
+        }
+        
+        /* Wind gradient for legend */
+        .wind-gradient {
+            background: linear-gradient(to right, 
+                rgba(134,163,171,1) 0%,
+                rgba(110,143,208,1) 15%,
+                rgba(15,147,167,1) 30%,
+                rgba(57,163,57,1) 45%,
+                rgba(194,134,62,1) 60%,
+                rgba(200,66,13,1) 75%,
+                rgba(175,80,136,1) 85%,
+                rgba(256,37,256,1) 100%
+            );
+        }
+        
+        .temp-gradient {
+            background: linear-gradient(to right,
+                #0000ff 0%,
+                #00ffff 25%,
+                #00ff00 50%,
+                #ffff00 75%,
+                #ff0000 100%
+            );
+        }
+        
+        .pressure-gradient {
+            background: linear-gradient(to right,
+                #543005 0%,
+                #8c510a 20%,
+                #bf812d 40%,
+                #dfc27d 60%,
+                #f6e8c3 80%,
+                #c7eae5 90%,
+                #5ab4ac 100%
+            );
+        }
+        
+        .humidity-gradient {
+            background: linear-gradient(to right,
+                #f7fcf0 0%,
+                #e0f3db 20%,
+                #ccebc5 40%,
+                #a8ddb5 60%,
+                #7bccc4 80%,
+                #4eb3d3 90%,
+                #2b8cbe 100%
+            );
+        }
+    </style>
+</head>
+<body>
+    <!-- Map Container -->
+    <div id="map"></div>
+    
+    <!-- Header Bar -->
+    <div class="header-bar">
+        <div class="header-title">
+            <span>🌍</span>
+            <span>Weather Visualization Platform</span>
+        </div>
+        <div class="header-actions">
+            <select id="tilesetSelector" class="btn btn-secondary" style="padding: 8px 15px;">
+                <option value="">Select Dataset...</option>
+                {% for tileset in available_tilesets %}
+                <option value="{{ tileset.id }}" {% if tileset.id == default_tileset.id %}selected{% endif %}>
+                    {{ tileset.name }}
+                </option>
+                {% endfor %}
+            </select>
+            <button class="btn btn-success" onclick="openUploadModal()">
+                <span>📤</span>
+                <span>Upload NetCDF</span>
+            </button>
+            <button class="btn btn-icon" onclick="togglePanel()">
+                <span>☰</span>
+            </button>
+        </div>
+    </div>
+    
+    <!-- Control Panel -->
+    <div class="control-panel" id="controlPanel">
+        <div class="panel-header">
+            <h3 class="panel-title">Layer Controls</h3>
+            <button class="btn btn-icon" onclick="togglePanel()">✕</button>
+        </div>
+        
+        <!-- Active Layers -->
+        <div class="layer-section">
+            <div class="layer-title">Active Layers</div>
+            <div id="activeLayers">
+                <div class="layer-item active" data-layer="wind">
+                    <div class="layer-info">
+                        <span class="layer-name">🌬️ Wind Animation</span>
+                        <span class="layer-type">Vector</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Layer Controls -->
+        <div id="layerControls">
+            <div class="slider-container">
+                <div class="slider-label">
+                    <span>Wind Speed Factor</span>
+                    <span id="speedValue">0.4</span>
+                </div>
+                <input type="range" class="slider" id="speedSlider" 
+                       min="0.1" max="1" step="0.1" value="0.4"
+                       oninput="updateWindSpeed(this.value)">
+            </div>
+            
+            <div class="slider-container">
+                <div class="slider-label">
+                    <span>Particle Count</span>
+                    <span id="particleValue">4000</span>
+                </div>
+                <input type="range" class="slider" id="particleSlider" 
+                       min="1000" max="8000" step="500" value="4000"
+                       oninput="updateParticleCount(this.value)">
+            </div>
+        </div>
+        
+        <!-- Quick Actions -->
+        <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.1);">
+            <button class="btn btn-secondary" style="width: 100%; margin-bottom: 10px;" onclick="resetView()">
+                🔄 Reset View
+            </button>
+            <button class="btn btn-secondary" style="width: 100%;" onclick="captureScreenshot()">
+                📸 Screenshot
+            </button>
+        </div>
+    </div>
+    
+    <!-- Legend -->
+    <div class="legend" id="legend">
+        <div class="legend-title">
+            <span>💨</span>
+            <span>Wind Speed (m/s)</span>
+        </div>
+        <div class="legend-gradient wind-gradient"></div>
+        <div class="legend-labels">
+            <span>0</span>
+            <span>20</span>
+            <span>40</span>
+            <span>60</span>
+            <span>70+</span>
+        </div>
+    </div>
+    
+    <!-- Info Panel -->
+    <div class="info-panel">
+        <div class="info-row">
+            <span class="info-label">Location:</span>
+            <span class="info-value" id="locationInfo">-</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">Data Source:</span>
+            <span class="info-value" id="dataSource">GFS Model</span>
+        </div>
+    </div>
+    
+    <!-- Upload Modal -->
+    <div class="upload-modal" id="uploadModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">Upload NetCDF File</h2>
+                <button class="btn btn-icon" onclick="closeUploadModal()">✕</button>
+            </div>
+            
+            <div class="drop-zone" id="dropZone">
+                <div class="drop-zone-icon">📊</div>
+                <p style="color: white; font-size: 18px; margin-bottom: 8px;">
+                    Drop your NetCDF file here or click to browse
+                </p>
+                <p style="color: #8b95a5; font-size: 14px;">
+                    Supports weather data with wind, temperature, pressure, and more
+                </p>
+                <input type="file" id="fileInput" accept=".nc" style="display: none;">
+            </div>
+            
+            <div id="uploadProgress" style="display: none;">
+                <div class="slider-label">
+                    <span>Processing...</span>
+                    <span id="progressPercent">0%</span>
+                </div>
+                <div style="background: rgba(255,255,255,0.1); height: 4px; border-radius: 2px; overflow: hidden;">
+                    <div id="progressBar" style="background: #3b82f6; height: 100%; width: 0%; transition: width 0.3s;"></div>
+                </div>
+                <p id="progressMessage" style="color: #8b95a5; font-size: 14px; margin-top: 10px;"></p>
+            </div>
+            
+            <div id="uploadResult" style="display: none; margin-top: 20px;">
+                <h3 style="color: white; margin-bottom: 15px;">File Analysis</h3>
+                <div id="fileMetadata" style="background: rgba(255,255,255,0.05); padding: 15px; border-radius: 8px;"></div>
+                <button class="btn btn-success" style="width: 100%; margin-top: 15px;" onclick="visualizeUploadedData()">
+                    🗺️ Visualize Data
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Loading Spinner -->
+    <div class="loading" id="loading">
+        <div class="spinner"></div>
+    </div>
+
+    <script>
+        // Configuration
+        const MAPBOX_TOKEN = '{{ mapbox_token }}';
+        const MAPBOX_USERNAME = '{{ mapbox_username }}';
+        
+        mapboxgl.accessToken = MAPBOX_TOKEN;
+        
+        // Global variables
+        let map;
+        let currentTileset = '{{ default_tileset.id }}';
+        let currentVisualization = null;
+        let uploadedJobId = null;
+        
+        // Initialize map
+        function initializeMap() {
+            map = new mapboxgl.Map({
+                container: 'map',
+                style: 'mapbox://styles/mapbox/dark-v11',
+                center: [-28, 47],
+                zoom: 2,
+                minZoom: 1,
+                maxZoom: 8
+            });
+            
+            map.on('load', () => {
+                loadDefaultVisualization();
+                setupEventHandlers();
+            });
+            
+            // Add navigation controls
+            map.addControl(new mapboxgl.NavigationControl());
+            map.addControl(new mapboxgl.FullscreenControl());
+            map.addControl(new mapboxgl.ScaleControl({
+                maxWidth: 200,
+                unit: 'metric'
+            }));
+        }
+        
+        // Load default visualization
+        function loadDefaultVisualization() {
+            // Add default wind layer
+            map.addSource('wind-source', {
+                'type': 'raster-array',
+                'url': 'mapbox://mapbox.gfs-winds',
+                'tileSize': 512
+            });
+            
+            map.addLayer({
+                'id': 'wind-layer',
+                'type': 'raster-particle',
+                'source': 'wind-source',
+                'source-layer': '10winds',
+                'paint': {
+                    'raster-particle-speed-factor': 0.4,
+                    'raster-particle-fade-opacity-factor': 0.9,
+                    'raster-particle-reset-rate-factor': 0.4,
+                    'raster-particle-count': 4000,
+                    'raster-particle-max-speed': 40,
+                    'raster-particle-color': [
+                        'interpolate',
+                        ['linear'],
+                        ['raster-particle-speed'],
+                        1.5, 'rgba(134,163,171,256)',
+                        10, 'rgba(57,163,57,256)',
+                        20, 'rgba(194,134,62,256)',
+                        30, 'rgba(200,66,13,256)',
+                        40, 'rgba(175,80,136,256)',
+                        50, 'rgba(241,255,109,256)',
+                        70, 'rgba(256,37,256,256)'
+                    ]
+                }
+            });
+        }
+        
+        // Setup event handlers
+        function setupEventHandlers() {
+            // Tileset selector
+            document.getElementById('tilesetSelector').addEventListener('change', async (e) => {
+                if (e.target.value) {
+                    await loadTileset(e.target.value);
+                }
+            });
+            
+            // File upload
+            const dropZone = document.getElementById('dropZone');
+            const fileInput = document.getElementById('fileInput');
+            
+            dropZone.addEventListener('click', () => fileInput.click());
+            
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZone.classList.add('dragover');
+            });
+            
+            dropZone.addEventListener('dragleave', () => {
+                dropZone.classList.remove('dragover');
+            });
+            
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('dragover');
+                
+                const files = e.dataTransfer.files;
+                if (files.length > 0 && files[0].name.endsWith('.nc')) {
+                    handleFileUpload(files[0]);
+                }
+            });
+            
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    handleFileUpload(e.target.files[0]);
+                }
+            });
+            
+            // Map interactions
+            map.on('mousemove', (e) => {
+                const coords = e.lngLat;
+                document.getElementById('locationInfo').textContent = 
+                    `${coords.lat.toFixed(3)}°, ${coords.lng.toFixed(3)}°`;
+            });
+        }
+        
+        // UI Functions
+        function togglePanel() {
+            document.getElementById('controlPanel').classList.toggle('collapsed');
+        }
+        
+        function openUploadModal() {
+            document.getElementById('uploadModal').classList.add('active');
+        }
+        
+        function closeUploadModal() {
+            document.getElementById('uploadModal').classList.remove('active');
+            resetUploadUI();
+        }
+        
+        function resetUploadUI() {
+            document.getElementById('dropZone').style.display = 'block';
+            document.getElementById('uploadProgress').style.display = 'none';
+            document.getElementById('uploadResult').style.display = 'none';
+            document.getElementById('fileInput').value = '';
+        }
+        
+        // File upload handling
+        async function handleFileUpload(file) {
+            document.getElementById('dropZone').style.display = 'none';
+            document.getElementById('uploadProgress').style.display = 'block';
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('create_tileset', 'true');
+            
+            try {
+                updateProgress(10, 'Uploading file...');
+                
+                const response = await fetch('/api/upload-netcdf', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    uploadedJobId = result.job_id;
+                    updateProgress(50, 'Analyzing NetCDF data...');
+                    
+                    // Display metadata
+                    displayFileMetadata(result);
+                    
+                    // Check status if creating tileset
+                    if (result.status === 'processing') {
+                        checkProcessingStatus(result.job_id);
+                    } else {
+                        updateProgress(100, 'Processing complete!');
+                    }
+                } else {
+                    showNotification('Error: ' + result.error, 'error');
+                    resetUploadUI();
+                }
+                
+            } catch (error) {
+                showNotification('Upload failed: ' + error.message, 'error');
+                resetUploadUI();
+            }
+        }
+        
+        function displayFileMetadata(data) {
+            const metadataDiv = document.getElementById('fileMetadata');
+            
+            let html = '<div style="color: white; font-size: 14px;">';
+            html += `<p><strong>Variables:</strong> ${data.metadata.variables.length}</p>`;
+            
+            if (data.scalar_vars.length > 0) {
+                html += `<p><strong>Scalar Fields:</strong> ${data.scalar_vars.join(', ')}</p>`;
+            }
+            
+            if (data.vector_pairs.length > 0) {
+                html += `<p><strong>Vector Fields:</strong> ${data.vector_pairs.map(p => p.name).join(', ')}</p>`;
+            }
+            
+            if (data.previews) {
+                html += '<div style="margin-top: 15px;"><strong>Data Preview:</strong></div>';
+                for (const [var_name, stats] of Object.entries(data.previews)) {
+                    html += `<div style="margin-top: 10px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 6px;">`;
+                    html += `<strong>${var_name}:</strong> ${stats.min.toFixed(2)} to ${stats.max.toFixed(2)} ${stats.units}`;
+                    html += `</div>`;
+                }
+            }
+            
+            html += '</div>';
+            metadataDiv.innerHTML = html;
+            
+            document.getElementById('uploadProgress').style.display = 'none';
+            document.getElementById('uploadResult').style.display = 'block';
+        }
+        
+        async function checkProcessingStatus(jobId) {
+            const checkInterval = setInterval(async () => {
+                try {
+                    const response = await fetch(`/api/visualization-status/${jobId}`);
+                    const status = await response.json();
+                    
+                    if (status.status === 'completed') {
+                        clearInterval(checkInterval);
+                        updateProgress(100, 'Tileset created successfully!');
+                        currentVisualization = status;
+                        
+                        // Add to tileset selector
+                        const selector = document.getElementById('tilesetSelector');
+                        const option = document.createElement('option');
+                        option.value = status.mapbox_tileset;
+                        option.textContent = `Uploaded: ${status.tileset_id}`;
+                        selector.appendChild(option);
+                        
+                    } else if (status.status === 'failed') {
+                        clearInterval(checkInterval);
+                        showNotification('Processing failed: ' + status.error, 'error');
+                        updateProgress(0, 'Processing failed');
+                    } else {
+                        updateProgress(75, 'Creating Mapbox tileset...');
+                    }
+                } catch (error) {
+                    clearInterval(checkInterval);
+                    showNotification('Status check failed', 'error');
+                }
+            }, 3000);
+        }
+        
+        function updateProgress(percent, message) {
+            document.getElementById('progressPercent').textContent = `${percent}%`;
+            document.getElementById('progressBar').style.width = `${percent}%`;
+            document.getElementById('progressMessage').textContent = message;
+        }
+        
+        async function visualizeUploadedData() {
+            if (!currentVisualization) return;
+            
+            closeUploadModal();
+            showLoading(true);
+            
+            try {
+                if (currentVisualization.mapbox_tileset) {
+                    await loadTileset(currentVisualization.mapbox_tileset);
+                    document.getElementById('tilesetSelector').value = currentVisualization.mapbox_tileset;
+                } else {
+                    // Visualize locally if no tileset created
+                    showNotification('Visualization ready', 'success');
+                }
+            } catch (error) {
+                showNotification('Visualization failed: ' + error.message, 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+        
+        // Tileset loading
+        async function loadTileset(tilesetId) {
+            showLoading(true);
+            
+            try {
+                const formData = new FormData();
+                formData.append('tileset_id', tilesetId);
+                
+                const response = await fetch('/api/load-tileset', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    // Clear existing layers
+                    clearVisualizationLayers();
+                    
+                    // Load new visualization based on type
+                    if (result.type === 'default') {
+                        loadDefaultVisualization();
+                    } else {
+                        loadUserTileset(tilesetId, result.config);
+                    }
+                    
+                    currentTileset = tilesetId;
+                    document.getElementById('dataSource').textContent = 
+                        result.type === 'default' ? 'GFS Model' : 'User Data';
+                    
+                    showNotification('Tileset loaded successfully', 'success');
+                } else {
+                    showNotification('Failed to load tileset', 'error');
+                }
+            } catch (error) {
+                showNotification('Error loading tileset: ' + error.message, 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+        
+        function clearVisualizationLayers() {
+            // Remove existing layers
+            const layers = ['wind-layer', 'temperature-layer', 'pressure-layer'];
+            layers.forEach(layerId => {
+                if (map.getLayer(layerId)) {
+                    map.removeLayer(layerId);
+                }
+            });
+            
+            // Remove sources
+            const sources = ['wind-source', 'weather-data'];
+            sources.forEach(sourceId => {
+                if (map.getSource(sourceId)) {
+                    map.removeSource(sourceId);
+                }
+            });
+        }
+        
+        function loadUserTileset(tilesetId, config) {
+            // Add source
+            map.addSource('weather-data', {
+                'type': 'raster-array',
+                'url': `mapbox://${tilesetId}`,
+                'tileSize': 512
+            });
+            
+            // Add wind layer if available
+            if (config.vector_fields && config.vector_fields.length > 0) {
+                const windField = config.vector_fields[0];
+                map.addLayer({
+                    'id': 'wind-layer',
+                    'type': 'raster-particle',
+                    'source': 'weather-data',
+                    'source-layer': windField.name,
+                    'paint': {
+                        'raster-particle-speed-factor': 0.4,
+                        'raster-particle-fade-opacity-factor': 0.9,
+                        'raster-particle-reset-rate-factor': 0.4,
+                        'raster-particle-count': 4000,
+                        'raster-particle-max-speed': 40,
+                        'raster-particle-color': getWindColorExpression()
+                    }
+                });
+            }
+            
+            // Update layer controls
+            updateLayerControls(config);
+        }
+        
+        function updateLayerControls(config) {
+            const layersDiv = document.getElementById('activeLayers');
+            layersDiv.innerHTML = '';
+            
+            // Add vector fields
+            if (config.vector_fields) {
+                config.vector_fields.forEach(field => {
+                    const layerItem = createLayerItem(field.name, 'Vector', '🌬️');
+                    layersDiv.appendChild(layerItem);
+                });
+            }
+            
+            // Add scalar fields
+            if (config.variables) {
+                config.variables.slice(0, 3).forEach(variable => {
+                    const icon = getVariableIcon(variable.name);
+                    const layerItem = createLayerItem(variable.display_name, 'Scalar', icon);
+                    layersDiv.appendChild(layerItem);
+                });
+            }
+        }
+        
+        function createLayerItem(name, type, icon) {
+            const div = document.createElement('div');
+            div.className = 'layer-item';
+            div.innerHTML = `
+                <div class="layer-info">
+                    <span class="layer-name">${icon} ${name}</span>
+                    <span class="layer-type">${type}</span>
+                </div>
+            `;
+            return div;
+        }
+        
+        function getVariableIcon(varName) {
+            if (varName.includes('temp')) return '🌡️';
+            if (varName.includes('press')) return '📊';
+            if (varName.includes('humid')) return '💧';
+            if (varName.includes('precip')) return '🌧️';
+            return '📈';
+        }
+        
+        function getWindColorExpression() {
+            return [
+                'interpolate',
+                ['linear'],
+                ['raster-particle-speed'],
+                1.5, 'rgba(134,163,171,256)',
+                10, 'rgba(57,163,57,256)',
+                20, 'rgba(194,134,62,256)',
+                30, 'rgba(200,66,13,256)',
+                40, 'rgba(175,80,136,256)',
+                50, 'rgba(241,255,109,256)',
+                70, 'rgba(256,37,256,256)'
+            ];
+        }
+        
+        // Control functions
+        function updateWindSpeed(value) {
+            document.getElementById('speedValue').textContent = value;
+            if (map.getLayer('wind-layer')) {
+                map.setPaintProperty('wind-layer', 'raster-particle-speed-factor', parseFloat(value));
+            }
+        }
+        
+        function updateParticleCount(value) {
+            document.getElementById('particleValue').textContent = value;
+            if (map.getLayer('wind-layer')) {
+                map.setPaintProperty('wind-layer', 'raster-particle-count', parseInt(value));
+            }
+        }
+        
+        function resetView() {
+            map.flyTo({
+                center: [-28, 47],
+                zoom: 2,
+                duration: 1500
+            });
+        }
+        
+        function captureScreenshot() {
+            const canvas = map.getCanvas();
+            canvas.toBlob(blob => {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `weather_visualization_${Date.now()}.png`;
+                a.click();
+                URL.revokeObjectURL(url);
+            });
+            showNotification('Screenshot captured!', 'success');
+        }
+        
+        // UI Helper functions
+        function showLoading(show) {
+            document.getElementById('loading').classList.toggle('active', show);
+        }
+        
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.textContent = message;
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.style.animation = 'slideDown 0.3s ease reverse';
+                setTimeout(() => notification.remove(), 300);
+            }, 3000);
+        }
+        
+        // Initialize application
+        initializeMap();
+    </script>
+</body>
+</html>
