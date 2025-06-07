@@ -32,13 +32,6 @@
       text-align: center;
       margin-bottom: 2rem;
     }
-    .mapbox-section {
-      background: #f0f8ff;
-      border: 1px solid #3b82f6;
-      border-radius: 8px;
-      padding: 1.5rem;
-      margin-top: 1.5rem;
-    }
     .file-input-wrapper {
       position: relative;
       margin-bottom: 1.5rem;
@@ -312,58 +305,8 @@
             <div id="fileInfo" class="file-info d-none"></div>
           </div>
           
-          <div class="mapbox-section">
-            <div class="form-check mb-3">
-              <input type="checkbox" class="form-check-input" id="uploadToMapbox">
-              <label for="uploadToMapbox" class="form-check-label">
-                <strong>Create Mapbox Tileset with MTS Recipe</strong>
-              </label>
-            </div>
-            
-            <div id="mapboxOptions" style="display: none;">
-              <div class="alert alert-info mb-3">
-                <small>This will create a tileset with proper recipe configuration for vector and scalar fields, enabling wind particle animations and multi-layer visualization.</small>
-              </div>
-              
-              <div class="row">
-                <div class="col-md-6 mb-3">
-                  <label for="mapboxToken" class="form-label">Access Token</label>
-                  <input type="password" class="form-control" id="mapboxToken" 
-                         placeholder="pk.your_token_here">
-                  <div class="credentials-info">
-                    <a href="https://account.mapbox.com/access-tokens/" target="_blank">Get token</a>
-                    with tilesets:write scope
-                  </div>
-                </div>
-                
-                <div class="col-md-6 mb-3">
-                  <label for="mapboxUsername" class="form-label">Username</label>
-                  <input type="text" class="form-control" id="mapboxUsername" 
-                         placeholder="your_username">
-                  <div class="credentials-info">
-                    Your Mapbox account username
-                  </div>
-                </div>
-              </div>
-              
-              <div class="form-check">
-                <input type="checkbox" class="form-check-input" id="createRecipe" checked>
-                <label for="createRecipe" class="form-check-label">
-                  Generate MTS recipe for vector/scalar fields
-                </label>
-              </div>
-            </div>
-            
-            <div class="form-check mt-3">
-              <input type="checkbox" class="form-check-input" id="generatePreviews" checked>
-              <label for="generatePreviews" class="form-check-label">
-                Generate image previews and animations
-              </label>
-            </div>
-          </div>
-          
           <button type="submit" class="btn btn-primary w-100 mt-3" id="submitBtn">
-            <span id="btnText">Analyze NetCDF File</span>
+            <span id="btnText">Process & Create Tileset</span>
             <span id="btnSpinner" style="display: none;">
               <span class="spinner-border spinner-border-sm me-2" role="status"></span>
               Processing...
@@ -465,19 +408,7 @@
       fileInfo.classList.remove('d-none');
     }
     
-    // Toggle Mapbox options
-    document.getElementById('uploadToMapbox').addEventListener('change', function() {
-      const mapboxOptions = document.getElementById('mapboxOptions');
-      const btnText = document.getElementById('btnText');
-      
-      if (this.checked) {
-        mapboxOptions.style.display = 'block';
-        btnText.textContent = 'Process & Create Tileset';
-      } else {
-        mapboxOptions.style.display = 'none';
-        btnText.textContent = 'Analyze NetCDF File';
-      }
-    });
+    // Remove the toggle event listener since we don't have the checkbox anymore
     
     // Progress tracking
     function updateProgress(step, percentage, message) {
@@ -620,27 +551,16 @@
       const formData = new FormData();
       formData.append('file', file);
       
-      // Add Mapbox options
-      const uploadToMapbox = document.getElementById('uploadToMapbox').checked;
-      const createRecipe = document.getElementById('createRecipe').checked;
-      const generatePreviews = document.getElementById('generatePreviews').checked;
+      // Add processing options (all automatically enabled)
+      const uploadToMapbox = true; // Always true
+      const createRecipe = true; // Always true
+      const generatePreviews = true; // Always true
       
       formData.append('upload_to_mapbox', uploadToMapbox);
       formData.append('create_recipe', createRecipe);
       formData.append('generate_previews', generatePreviews);
       
-      if (uploadToMapbox) {
-        const token = document.getElementById('mapboxToken').value.trim();
-        const username = document.getElementById('mapboxUsername').value.trim();
-        
-        if (!token || !username) {
-          alert('Please provide both Mapbox token and username');
-          return;
-        }
-        
-        formData.append('mapbox_token', token);
-        formData.append('mapbox_username', username);
-      }
+      // Mapbox credentials will be taken from environment variables in the backend
       
       // Update UI
       const submitBtn = document.getElementById('submitBtn');
