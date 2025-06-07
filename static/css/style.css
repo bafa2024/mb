@@ -1,3 +1,5 @@
+/* Enhanced styles for NetCDF to Mapbox converter */
+
 body {
   background: #f8fafc;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -8,6 +10,189 @@ h2 {
 }
 
 .upload-card {
-  max-width: 800px;
+  max-width: 1200px;
   margin: 0 auto;
+}
+
+/* Image preview animations */
+.preview-card {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.preview-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.15);
+}
+
+.preview-image {
+  transition: transform 0.3s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.preview-image:hover {
+  transform: scale(1.05);
+  cursor: zoom-in;
+}
+
+/* Modal animations */
+.modal {
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.modal-content {
+  animation: zoomIn 0.3s ease;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+  border-radius: 8px;
+}
+
+@keyframes zoomIn {
+  from {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Tab animations */
+.tab-button {
+  position: relative;
+  transition: all 0.3s ease;
+}
+
+.tab-button::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: #3b82f6;
+  transform: scaleX(0);
+  transition: transform 0.3s ease;
+}
+
+.tab-button.active::after {
+  transform: scaleX(1);
+}
+
+/* Progress bar animations */
+.progress-bar {
+  transition: width 0.5s ease;
+}
+
+/* Button hover effects */
+.btn {
+  transition: all 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.btn::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  transform: translate(-50%, -50%);
+  transition: width 0.6s, height 0.6s;
+}
+
+.btn:hover::before {
+  width: 300px;
+  height: 300px;
+}
+
+/* Loading spinner */
+.spinner-border {
+  vertical-align: middle;
+}
+
+/* Colormap gradients */
+.colormap-thermal {
+  background: linear-gradient(to right, #0000ff, #00ffff, #00ff00, #ffff00, #ff0000);
+}
+
+.colormap-viridis {
+  background: linear-gradient(to right, #440154, #3e4989, #26828e, #6dcd59, #fde725);
+}
+
+.colormap-plasma {
+  background: linear-gradient(to right, #0d0887, #6a00a8, #b12a90, #e16462, #fca636);
+}
+
+.colormap-cool {
+  background: linear-gradient(to right, #0000ff, #00ffff, #ffffff);
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .preview-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .main-container {
+    padding: 0 1rem;
+  }
+  
+  .upload-card {
+    padding: 1.5rem;
+  }
+}
+
+/* Print styles */
+@media print {
+  .btn, .tab-buttons, .preview-actions {
+    display: none;
+  }
+  
+  .preview-card {
+    break-inside: avoid;
+  }
+}
+
+/* Accessibility improvements */
+.btn:focus,
+.tab-button:focus {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  body {
+    background: #1a202c;
+    color: #e2e8f0;
+  }
+  
+  .upload-card,
+  .preview-section,
+  .preview-card {
+    background: #2d3748;
+    border-color: #4a5568;
+  }
+  
+  .drop-zone {
+    background: #374151;
+    border-color: #4b5563;
+  }
+  
+  .drop-zone:hover {
+    background: #4a5568;
+    border-color: #3b82f6;
+  }
 }

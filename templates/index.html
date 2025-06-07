@@ -11,7 +11,7 @@
       background: #f8fafc;
     }
     .main-container {
-      max-width: 900px;
+      max-width: 1200px;
       margin: 0 auto;
     }
     .upload-card {
@@ -159,6 +159,127 @@
     .step.complete::after {
       background: #10b981;
     }
+    
+    /* New styles for image previews */
+    .preview-section {
+      margin-top: 2rem;
+      padding: 2rem;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+      border: 1px solid #e5e7eb;
+    }
+    .preview-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 1.5rem;
+      margin-top: 1.5rem;
+    }
+    .preview-card {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 1rem;
+      transition: all 0.3s ease;
+    }
+    .preview-card:hover {
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      transform: translateY(-2px);
+    }
+    .preview-image {
+      width: 100%;
+      height: 200px;
+      object-fit: contain;
+      background: white;
+      border-radius: 6px;
+      margin-bottom: 1rem;
+      cursor: pointer;
+    }
+    .preview-title {
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+      color: #1f2937;
+    }
+    .preview-stats {
+      font-size: 0.85rem;
+      color: #6b7280;
+      margin-bottom: 0.5rem;
+    }
+    .preview-actions {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 1rem;
+    }
+    .btn-sm {
+      padding: 0.375rem 0.75rem;
+      font-size: 0.875rem;
+    }
+    .animation-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+    }
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      padding-top: 50px;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      overflow: auto;
+      background-color: rgba(0,0,0,0.9);
+    }
+    .modal-content {
+      margin: auto;
+      display: block;
+      max-width: 90%;
+      max-height: 90%;
+    }
+    .close {
+      position: absolute;
+      top: 15px;
+      right: 35px;
+      color: #f1f1f1;
+      font-size: 40px;
+      font-weight: bold;
+      transition: 0.3s;
+      cursor: pointer;
+    }
+    .close:hover,
+    .close:focus {
+      color: #bbb;
+      text-decoration: none;
+    }
+    .tab-container {
+      margin-top: 1rem;
+    }
+    .tab-buttons {
+      display: flex;
+      border-bottom: 2px solid #e5e7eb;
+      margin-bottom: 1rem;
+    }
+    .tab-button {
+      padding: 0.5rem 1rem;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: #6b7280;
+      font-weight: 500;
+      transition: all 0.3s ease;
+    }
+    .tab-button.active {
+      color: #3b82f6;
+      border-bottom: 2px solid #3b82f6;
+    }
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
+    }
   </style>
 </head>
 <body>
@@ -173,6 +294,7 @@
           <span class="feature-badge">💨 Wind Vectors</span>
           <span class="feature-badge">📊 Multi-variable</span>
           <span class="feature-badge">🗺️ MTS Recipe</span>
+          <span class="feature-badge">🎨 Visualizations</span>
         </div>
         
         <form id="uploadForm">
@@ -236,6 +358,13 @@
                 </label>
               </div>
             </div>
+            
+            <div class="form-check mt-3">
+              <input type="checkbox" class="form-check-input" id="generatePreviews" checked>
+              <label for="generatePreviews" class="form-check-label">
+                Generate image previews and animations
+              </label>
+            </div>
           </div>
           
           <button type="submit" class="btn btn-primary w-100 mt-3" id="submitBtn">
@@ -263,7 +392,34 @@
         
         <div id="result"></div>
       </div>
+      
+      <!-- Preview Section -->
+      <div id="previewSection" class="preview-section" style="display: none;">
+        <h3>📊 Data Visualizations</h3>
+        <p class="text-muted">Click on any image to view full size. Animated GIFs show temporal variations.</p>
+        
+        <div class="tab-container">
+          <div class="tab-buttons">
+            <button class="tab-button active" onclick="switchTab('static')">Static Images</button>
+            <button class="tab-button" onclick="switchTab('animated')">Animations</button>
+          </div>
+          
+          <div class="tab-content active" id="staticTab">
+            <div class="preview-grid" id="staticPreviews"></div>
+          </div>
+          
+          <div class="tab-content" id="animatedTab">
+            <div class="preview-grid" id="animatedPreviews"></div>
+          </div>
+        </div>
+      </div>
     </div>
+  </div>
+  
+  <!-- Image Modal -->
+  <div id="imageModal" class="modal">
+    <span class="close" onclick="closeModal()">&times;</span>
+    <img class="modal-content" id="modalImage">
   </div>
 
   <script>
@@ -345,6 +501,111 @@
       document.getElementById('progressBar').style.width = `${percentage}%`;
       document.getElementById('progressMessage').textContent = message;
     }
+    
+    // Display previews
+    function displayPreviews(previews) {
+      if (!previews || Object.keys(previews).length === 0) return;
+      
+      document.getElementById('previewSection').style.display = 'block';
+      const staticContainer = document.getElementById('staticPreviews');
+      const animatedContainer = document.getElementById('animatedPreviews');
+      
+      staticContainer.innerHTML = '';
+      animatedContainer.innerHTML = '';
+      
+      Object.entries(previews).forEach(([variable, data]) => {
+        // Static preview
+        if (data.preview) {
+          const card = document.createElement('div');
+          card.className = 'preview-card';
+          card.innerHTML = `
+            <img src="data:image/png;base64,${data.preview}" 
+                 alt="${variable}" 
+                 class="preview-image"
+                 onclick="openModal('data:image/png;base64,${data.preview}')">
+            <div class="preview-title">${variable}</div>
+            <div class="preview-stats">
+              Min: ${data.stats.min.toFixed(2)}, 
+              Max: ${data.stats.max.toFixed(2)}, 
+              Mean: ${data.stats.mean.toFixed(2)}
+            </div>
+            <div class="preview-actions">
+              <a href="/download-tif/${variable}" class="btn btn-sm btn-outline-primary">
+                📥 Download TIF
+              </a>
+              <a href="/preview/${variable}" class="btn btn-sm btn-outline-secondary" target="_blank">
+                🔍 Full Size
+              </a>
+            </div>
+          `;
+          staticContainer.appendChild(card);
+        }
+        
+        // Animated preview
+        if (data.animated_gif) {
+          const card = document.createElement('div');
+          card.className = 'preview-card';
+          card.innerHTML = `
+            <img src="data:image/gif;base64,${data.animated_gif}" 
+                 alt="${variable} animation" 
+                 class="preview-image"
+                 onclick="openModal('data:image/gif;base64,${data.animated_gif}')">
+            <div class="preview-title">${variable} (Animated)</div>
+            <div class="preview-stats">
+              Temporal animation showing changes over time
+            </div>
+            <div class="preview-actions">
+              <a href="/download-gif/${variable}" class="btn btn-sm btn-outline-primary">
+                📥 Download GIF
+              </a>
+            </div>
+          `;
+          animatedContainer.appendChild(card);
+        }
+      });
+      
+      // Show appropriate tab
+      if (animatedContainer.children.length > 0) {
+        document.querySelector('.tab-button[onclick*="animated"]').style.display = 'block';
+      } else {
+        document.querySelector('.tab-button[onclick*="animated"]').style.display = 'none';
+      }
+    }
+    
+    // Tab switching
+    function switchTab(tabName) {
+      // Update buttons
+      document.querySelectorAll('.tab-button').forEach(btn => {
+        btn.classList.remove('active');
+      });
+      event.target.classList.add('active');
+      
+      // Update content
+      document.querySelectorAll('.tab-content').forEach(content => {
+        content.classList.remove('active');
+      });
+      document.getElementById(tabName + 'Tab').classList.add('active');
+    }
+    
+    // Modal functions
+    function openModal(src) {
+      const modal = document.getElementById('imageModal');
+      const modalImg = document.getElementById('modalImage');
+      modal.style.display = 'block';
+      modalImg.src = src;
+    }
+    
+    function closeModal() {
+      document.getElementById('imageModal').style.display = 'none';
+    }
+    
+    // Close modal on outside click
+    window.onclick = function(event) {
+      const modal = document.getElementById('imageModal');
+      if (event.target == modal) {
+        closeModal();
+      }
+    }
 
     // Form submission
     document.getElementById('uploadForm').onsubmit = async function(e) {
@@ -362,9 +623,11 @@
       // Add Mapbox options
       const uploadToMapbox = document.getElementById('uploadToMapbox').checked;
       const createRecipe = document.getElementById('createRecipe').checked;
+      const generatePreviews = document.getElementById('generatePreviews').checked;
       
       formData.append('upload_to_mapbox', uploadToMapbox);
       formData.append('create_recipe', createRecipe);
+      formData.append('generate_previews', generatePreviews);
       
       if (uploadToMapbox) {
         const token = document.getElementById('mapboxToken').value.trim();
@@ -403,6 +666,11 @@
         
         if (response.ok && data.success) {
           updateProgress(4, 100, 'Complete!');
+          
+          // Display previews if available
+          if (data.previews) {
+            displayPreviews(data.previews);
+          }
           
           let resultHtml = `
             <div class="metadata-card">
@@ -443,7 +711,7 @@
             `;
           }
           
-          if (data.generated_files) {
+          if (data.generated_files && !data.has_previews) {
             resultHtml += `
               <div class="mt-3">
                 <h5>📥 Download GeoTIFFs</h5>
@@ -466,20 +734,22 @@
             `;
           }
           
-          if (data.job_id) {
+          if (data.visualization_url) {
             resultHtml += `
               <div class="mt-3">
-                <a href="/demo?tileset=${data.tileset_id}" class="btn btn-primary">
-                  🗺️ View Visualization Demo
+                <a href="${data.visualization_url}" class="btn btn-primary" target="_blank">
+                  🗺️ View Mapbox Visualization
                 </a>
               </div>
             `;
-            
-            // Check job status
-            setTimeout(() => checkJobStatus(data.job_id), 3000);
           }
           
           resultDiv.innerHTML = resultHtml;
+          
+          if (data.job_id) {
+            // Check job status
+            setTimeout(() => checkJobStatus(data.job_id), 3000);
+          }
           
         } else {
           resultDiv.innerHTML = `

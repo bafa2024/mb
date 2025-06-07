@@ -1,5 +1,5 @@
 from fastapi import FastAPI, UploadFile, File, Request, Form
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import xarray as xr
@@ -18,6 +18,9 @@ from pathlib import Path
 import base64
 import io
 from PIL import Image
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+from matplotlib.colors import Normalize
 
 app = FastAPI()
 
@@ -302,6 +305,213 @@ def prepare_netcdf_for_mapbox_advanced(ds: xr.Dataset, output_path: str):
     
     ds.to_netcdf(output_path, encoding=encoding)
 
+def create_preview_from_tif(tif_path: str, variable_name: str, colormap: str = 'viridis') -> str:
+    """
+    Create a PNG preview from a GeoTIFF file and return as base64
+    """
+    try:
+        # Open the raster
+        da = xr.open_rasterio(tif_path)
+        
+        # Get the data
+        if len(da.shape) == 3:
+            data = da[0].values  # Take first band
+        else:
+            data = da.values
+        
+        # Create figure
+        fig, ax = plt.subplots(figsize=(10, 8))
+        
+        # Normalize data for better visualization
+        vmin, vmax = np.nanpercentile(data, [2, 98])  # Use 2nd and 98th percentile
+        
+        # Create the plot
+        im = ax.imshow(data, cmap=colormap, vmin=vmin, vmax=vmax, aspect='auto')
+        
+        # Add colorbar
+        cbar = plt.colorbar(im, ax=ax)
+        cbar.set_label(variable_name, rotation=270, labelpad=20)
+        
+        # Add title
+        ax.set_title(f'{variable_name} Visualization', fontsize=14, fontweight='bold')
+        
+        # Add grid
+        ax.grid(True, alpha=0.3)
+        
+        # Remove axis labels for cleaner look
+        ax.set_xticks([])
+        ax.set_yticks([])
+        
+        # Save to bytes
+        buffer = io.BytesIO()
+        plt.savefig(buffer, format='png', dpi=150, bbox_inches='tight')
+        plt.close()
+        
+        # Convert to base64
+        buffer.seek(0)
+        img_base64 = base64.b64encode(buffer.getvalue()).decode()
+        
+        return img_base64
+        
+    except Exception as e:
+        print(f"Error creating preview: {e}")
+        return None
+
+def create_animated_gif(nc_path: str, variable: str, output_path: str, 
+                       colormap: str = 'viridis', fps: int = 2) -> bool:
+    """
+    Create an animated GIF from a NetCDF variable with time dimension
+    """
+    try:
+        ds = xr.open_dataset(nc_path)
+        
+        if variable not in ds.data_vars:
+            print(f"Variable {variable} not found in dataset")
+            return False
+        
+        da = ds[variable]
+        
+        # Check if time dimension exists
+        if 'time' not in da.dims:
+            print(f"No time dimension found for {variable}")
+            return False
+        
+        # Create frames
+        frames = []
+        time_steps = len(da.time)
+        
+        # Determine global min/max for consistent colormap
+        vmin = float(da.min())
+        vmax = float(da.max())
+        
+        # Use percentiles for better visualization
+        vmin, vmax = np.nanpercentile(da.values, [2, 98])
+        
+        for t in range(min(time_steps, 24)):  # Limit to 24 frames for file size
+            # Get data for this time step
+            data = da.isel(time=t).values
+            
+            # Create figure
+            fig, ax = plt.subplots(figsize=(8, 6))
+            
+            # Plot data
+            im = ax.imshow(data, cmap=colormap, vmin=vmin, vmax=vmax, aspect='auto')
+            
+            # Add colorbar
+            cbar = plt.colorbar(im, ax=ax)
+            cbar.set_label(variable, rotation=270, labelpad=20)
+            
+            # Add title with timestamp
+            time_str = str(da.time[t].values)[:19]  # Format timestamp
+            ax.set_title(f'{variable} - {time_str}', fontsize=12)
+            
+            # Clean up axes
+            ax.set_xticks([])
+            ax.set_yticks([])
+            
+            # Convert to PIL Image
+            buffer = io.BytesIO()
+            plt.savefig(buffer, format='png', dpi=100, bbox_inches='tight')
+            buffer.seek(0)
+            frame = Image.open(buffer)
+            frames.append(frame)
+            plt.close()
+        
+        # Save as GIF
+        if frames:
+            frames[0].save(
+                output_path,
+                save_all=True,
+                append_images=frames[1:],
+                duration=1000//fps,  # Duration in milliseconds
+                loop=0
+            )
+            return True
+        
+        ds.close()
+        return False
+        
+    except Exception as e:
+        print(f"Error creating GIF: {e}")
+        return False
+
+def generate_all_previews(prepared_path: str, metadata: Dict) -> Dict:
+    """
+    Generate preview images for all variables
+    """
+    preview_data = {}
+    
+    try:
+        ds = xr.open_dataset(prepared_path)
+        
+        # Define colormaps for different variable types
+        colormaps = {
+            'temperature': 'RdYlBu_r',
+            'temp': 'RdYlBu_r',
+            't2m': 'RdYlBu_r',
+            'pressure': 'viridis',
+            'humidity': 'Blues',
+            'precipitation': 'Blues',
+            'wind': 'plasma',
+            'u10': 'plasma',
+            'v10': 'plasma'
+        }
+        
+        for var in metadata["variables"][:6]:  # Limit to first 6 variables
+            if var in ds.data_vars:
+                da = ds[var]
+                
+                # Handle time dimension
+                if 'time' in da.dims:
+                    da = da.isel(time=0)
+                
+                # Determine colormap
+                cmap = 'viridis'
+                for key, cm in colormaps.items():
+                    if key in var.lower():
+                        cmap = cm
+                        break
+                
+                # Create TIF file
+                out_tif = TEMP_DIR / f"{var}.tif"
+                try:
+                    da.rio.to_raster(str(out_tif))
+                    
+                    # Create PNG preview
+                    preview_base64 = create_preview_from_tif(str(out_tif), var, cmap)
+                    
+                    if preview_base64:
+                        preview_data[var] = {
+                            'preview': preview_base64,
+                            'has_tif': True,
+                            'colormap': cmap,
+                            'stats': {
+                                'min': float(da.min()),
+                                'max': float(da.max()),
+                                'mean': float(da.mean())
+                            }
+                        }
+                        
+                        # Check if we can create animated GIF
+                        if 'time' in ds[var].dims and len(ds[var].time) > 1:
+                            gif_path = TEMP_DIR / f"{var}_animated.gif"
+                            if create_animated_gif(prepared_path, var, str(gif_path), cmap):
+                                # Convert GIF to base64
+                                with open(gif_path, 'rb') as f:
+                                    gif_base64 = base64.b64encode(f.read()).decode()
+                                preview_data[var]['animated_gif'] = gif_base64
+                                preview_data[var]['has_animation'] = True
+                        
+                except Exception as e:
+                    print(f"Warning: Could not create preview for {var}: {e}")
+        
+        ds.close()
+        return preview_data
+        
+    except Exception as e:
+        print(f"Error generating previews: {e}")
+        return {}
+
 def generate_preview_images(ds: xr.Dataset) -> Dict:
     """
     Generate base64-encoded preview images for visualization
@@ -436,7 +646,8 @@ async def process_file(
     mapbox_token: Optional[str] = Form(None),
     mapbox_username: Optional[str] = Form(None),
     upload_to_mapbox: bool = Form(False),
-    create_recipe: bool = Form(False)
+    create_recipe: bool = Form(False),
+    generate_previews: bool = Form(True)  # New parameter
 ):
     filepath = None
     prepared_path = None
@@ -469,28 +680,37 @@ async def process_file(
             "message": f"Successfully processed {file.filename}"
         }
         
-        # Generate GeoTIFF for each variable (for preview/download)
+        # Generate previews if requested
+        if generate_previews:
+            preview_data = generate_all_previews(str(prepared_path), metadata)
+            response_data["previews"] = preview_data
+            response_data["has_previews"] = len(preview_data) > 0
+        
+        # Generate GeoTIFF for each variable (for download)
         ds = xr.open_dataset(str(prepared_path))
         generated_files = []
         
-        for var in metadata["variables"][:3]:  # Limit to first 3 for demo
+        for var in metadata["variables"][:6]:  # Increased limit
             if var in ds.data_vars:
                 da = ds[var]
                 if 'time' in da.dims:
                     da = da.isel(time=0)
                 
                 out_tif = TEMP_DIR / f"{var}.tif"
-                try:
-                    da.rio.to_raster(str(out_tif))
+                if not out_tif.exists():  # Don't regenerate if already created
+                    try:
+                        da.rio.to_raster(str(out_tif))
+                        generated_files.append(var)
+                    except Exception as e:
+                        print(f"Warning: Could not create GeoTIFF for {var}: {e}")
+                else:
                     generated_files.append(var)
-                except Exception as e:
-                    print(f"Warning: Could not create GeoTIFF for {var}: {e}")
         
-        ds.close()  # Close the dataset
+        ds.close()
         
         response_data["generated_files"] = generated_files
         
-        # Upload to Mapbox if requested
+        # Rest of the Mapbox upload code remains the same...
         if upload_to_mapbox and create_recipe:
             if not token or not username:
                 response_data["message"] += "<br>⚠️ Mapbox upload requires credentials."
@@ -695,6 +915,42 @@ async def download_recipe(tileset_id: str):
             media_type="application/json"
         )
     return JSONResponse({"message": "Recipe not found."}, status_code=404)
+
+# Add new endpoint for downloading animated GIFs
+@app.get("/download-gif/{variable}")
+async def download_gif(variable: str):
+    """Download animated GIF for a variable."""
+    gif_path = TEMP_DIR / f"{variable}_animated.gif"
+    if gif_path.exists():
+        return FileResponse(
+            str(gif_path),
+            filename=f"{variable}_animated.gif",
+            media_type="image/gif"
+        )
+    return JSONResponse({"message": "Animated GIF not found."}, status_code=404)
+
+# Add endpoint to get preview image
+@app.get("/preview/{variable}")
+async def get_preview(variable: str):
+    """Get preview image for a variable."""
+    # First try to find a generated preview PNG
+    preview_path = TEMP_DIR / f"{variable}_preview.png"
+    if preview_path.exists():
+        return FileResponse(
+            str(preview_path),
+            media_type="image/png"
+        )
+    
+    # If not found, try to generate from TIF
+    tif_path = TEMP_DIR / f"{variable}.tif"
+    if tif_path.exists():
+        preview_base64 = create_preview_from_tif(str(tif_path), variable)
+        if preview_base64:
+            # Convert base64 back to bytes and return
+            img_data = base64.b64decode(preview_base64)
+            return Response(content=img_data, media_type="image/png")
+    
+    return JSONResponse({"message": "Preview not found."}, status_code=404)
 
 @app.get("/check-job/{job_id}")
 async def check_job(job_id: str, username: str = None, token: str = None):
