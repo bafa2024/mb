@@ -43,11 +43,6 @@
       text-align: center;
       transition: all 0.3s ease;
       background: #f9fafb;
-      cursor: pointer;
-    }
-    .drop-zone:hover {
-      border-color: #3b82f6;
-      background: #eff6ff;
     }
     .drop-zone.dragover {
       border-color: #3b82f6;
@@ -273,14 +268,6 @@
     .tab-content.active {
       display: block;
     }
-    .status-info {
-      background: #f0f9ff;
-      border: 1px solid #3b82f6;
-      border-radius: 6px;
-      padding: 1rem;
-      margin-bottom: 1rem;
-      font-size: 0.9rem;
-    }
   </style>
 </head>
 <body>
@@ -316,15 +303,6 @@
               </div>
             </div>
             <div id="fileInfo" class="file-info d-none"></div>
-          </div>
-          
-          <div class="status-info">
-            <strong>ℹ️ Automatic Processing:</strong> Your file will be automatically processed with:
-            <ul class="mb-0 mt-2">
-              <li>MTS Recipe generation for vector/scalar fields</li>
-              <li>Image preview and animation creation</li>
-              <li>Mapbox tileset upload (if credentials are configured)</li>
-            </ul>
           </div>
           
           <button type="submit" class="btn btn-primary w-100 mt-3" id="submitBtn">
@@ -389,20 +367,13 @@
     const fileInfo = document.getElementById('fileInfo');
     const chooseFileBtn = document.getElementById('chooseFileBtn');
     
-    // Store session ID for downloads
-    let currentSessionId = null;
-    
-    // Click handler for the entire drop zone
-    dropZone.addEventListener('click', function(e) {
+    // Click handler for the choose file button only
+    chooseFileBtn.addEventListener('click', function(e) {
+      e.stopPropagation();
       fileInput.click();
     });
     
-    // Prevent button from triggering twice
-    chooseFileBtn.addEventListener('click', function(e) {
-      e.stopPropagation();
-    });
-    
-    // Drag and drop handlers
+    // Only handle drag and drop
     dropZone.addEventListener('dragover', (e) => {
       e.preventDefault();
       dropZone.classList.add('dragover');
@@ -417,14 +388,9 @@
       dropZone.classList.remove('dragover');
       
       const files = e.dataTransfer.files;
-      if (files.length > 0) {
-        const file = files[0];
-        if (file.name.endsWith('.nc') || file.name.endsWith('.nc4')) {
-          fileInput.files = files;
-          updateFileInfo(file);
-        } else {
-          alert('Please upload a NetCDF file (.nc or .nc4)');
-        }
+      if (files.length > 0 && files[0].name.endsWith('.nc')) {
+        fileInput.files = files;
+        updateFileInfo(files[0]);
       }
     });
     
@@ -441,6 +407,8 @@
       `;
       fileInfo.classList.remove('d-none');
     }
+    
+    // Remove the toggle event listener since we don't have the checkbox anymore
     
     // Progress tracking
     function updateProgress(step, percentage, message) {
@@ -466,10 +434,9 @@
     }
     
     // Display previews
-    function displayPreviews(previews, sessionId) {
+    function displayPreviews(previews) {
       if (!previews || Object.keys(previews).length === 0) return;
       
-      currentSessionId = sessionId;
       document.getElementById('previewSection').style.display = 'block';
       const staticContainer = document.getElementById('staticPreviews');
       const animatedContainer = document.getElementById('animatedPreviews');
@@ -494,10 +461,10 @@
               Mean: ${data.stats.mean.toFixed(2)}
             </div>
             <div class="preview-actions">
-              <a href="/download-tif/${sessionId}/${variable}" class="btn btn-sm btn-outline-primary">
+              <a href="/download-tif/${variable}" class="btn btn-sm btn-outline-primary">
                 📥 Download TIF
               </a>
-              <a href="/preview/${sessionId}/${variable}" class="btn btn-sm btn-outline-secondary" target="_blank">
+              <a href="/preview/${variable}" class="btn btn-sm btn-outline-secondary" target="_blank">
                 🔍 Full Size
               </a>
             </div>
@@ -519,7 +486,7 @@
               Temporal animation showing changes over time
             </div>
             <div class="preview-actions">
-              <a href="/download-gif/${sessionId}/${variable}" class="btn btn-sm btn-outline-primary">
+              <a href="/download-gif/${variable}" class="btn btn-sm btn-outline-primary">
                 📥 Download GIF
               </a>
             </div>
@@ -528,16 +495,11 @@
         }
       });
       
-      // Show/hide animation tab based on content
-      const hasAnimations = animatedContainer.children.length > 0;
-      const animationTabBtn = document.querySelector('.tab-button[onclick*="animated"]');
-      if (animationTabBtn) {
-        animationTabBtn.style.display = hasAnimations ? 'block' : 'none';
-      }
-      
-      // If no static previews but has animations, switch to animations tab
-      if (staticContainer.children.length === 0 && hasAnimations) {
-        switchTab('animated');
+      // Show appropriate tab
+      if (animatedContainer.children.length > 0) {
+        document.querySelector('.tab-button[onclick*="animated"]').style.display = 'block';
+      } else {
+        document.querySelector('.tab-button[onclick*="animated"]').style.display = 'none';
       }
     }
     
@@ -575,13 +537,6 @@
         closeModal();
       }
     }
-    
-    // Escape key to close modal
-    document.addEventListener('keydown', function(event) {
-      if (event.key === 'Escape') {
-        closeModal();
-      }
-    });
 
     // Form submission
     document.getElementById('uploadForm').onsubmit = async function(e) {
@@ -597,9 +552,15 @@
       formData.append('file', file);
       
       // Add processing options (all automatically enabled)
-      formData.append('upload_to_mapbox', true);
-      formData.append('create_recipe', true);
-      formData.append('generate_previews', true);
+      const uploadToMapbox = true; // Always true
+      const createRecipe = true; // Always true
+      const generatePreviews = true; // Always true
+      
+      formData.append('upload_to_mapbox', uploadToMapbox);
+      formData.append('create_recipe', createRecipe);
+      formData.append('generate_previews', generatePreviews);
+      
+      // Mapbox credentials will be taken from environment variables in the backend
       
       // Update UI
       const submitBtn = document.getElementById('submitBtn');
@@ -612,16 +573,10 @@
       btnSpinner.style.display = 'inline-block';
       resultDiv.innerHTML = '';
       
-      // Hide preview section from previous upload
-      document.getElementById('previewSection').style.display = 'none';
-      
       // Start progress
       updateProgress(1, 10, 'Analyzing NetCDF file...');
       
       try {
-        // Simulate progress updates
-        setTimeout(() => updateProgress(2, 40, 'Processing variables and generating previews...'), 1000);
-        
         const response = await fetch('/process', {
           method: 'POST',
           body: formData
@@ -633,6 +588,15 @@
           updateProgress(4, 100, 'Complete!');
           
           // Display previews if available
+          if (data.previews) {
+            displayPreviews(data.previews);
+          }
+          
+          let resultHtml = `
+            <div class="metadata-card">
+              <h5>📊 File Analysis</h5>
+          `;
+          
           if (data.metadata) {
             resultHtml += `
               <p><strong>Dimensions:</strong> ${JSON.stringify(data.metadata.dimensions)}</p>
@@ -649,12 +613,9 @@
               <div class="mb-3">
                 <strong>Vector Fields (${data.metadata.vector_pairs.length}):</strong>
                 <div class="variable-list">
-                  ${data.metadata.vector_pairs.length > 0 
-                    ? data.metadata.vector_pairs.map(v => 
-                        `<span class="variable-tag vector">${v.type} (${v.u}, ${v.v})</span>`
-                      ).join('')
-                    : '<span class="text-muted">No vector fields detected</span>'
-                  }
+                  ${data.metadata.vector_pairs.map(v => 
+                    `<span class="variable-tag vector">${v.type} (${v.u}, ${v.v})</span>`
+                  ).join('')}
                 </div>
               </div>
             `;
@@ -664,27 +625,26 @@
           
           if (data.message) {
             resultHtml += `
-              <div class="alert ${data.mapbox_upload ? 'alert-success' : 'alert-info'} mt-3">
+              <div class="alert alert-success mt-3">
                 ${data.message}
               </div>
             `;
           }
           
-          if (data.generated_files && data.session_id && !data.has_previews) {
+          if (data.generated_files && !data.has_previews) {
             resultHtml += `
               <div class="mt-3">
                 <h5>📥 Download GeoTIFFs</h5>
                 <div class="btn-group" role="group">
                   ${data.generated_files.map(f => 
-                    `<a href="/download-tif/${data.session_id}/${f}" class="btn btn-sm btn-outline-primary">${f}.tif</a>`
+                    `<a href="/download-tif/${f}" class="btn btn-sm btn-outline-primary">${f}.tif</a>`
                   ).join('')}
                 </div>
               </div>
             `;
           }
           
-          if (data.recipe_download && data.session_id) {
-            const tileset_id = data.tileset_id ? data.tileset_id.split('.').pop() : 'tileset';
+          if (data.recipe_download) {
             resultHtml += `
               <div class="mt-3">
                 <a href="${data.recipe_download}" class="btn btn-success">
@@ -694,7 +654,7 @@
             `;
           }
           
-          if (data.visualization_url && data.mapbox_upload) {
+          if (data.visualization_url) {
             resultHtml += `
               <div class="mt-3">
                 <a href="${data.visualization_url}" class="btn btn-primary" target="_blank">
@@ -706,36 +666,18 @@
           
           resultDiv.innerHTML = resultHtml;
           
-          if (data.job_id && data.mapbox_upload) {
+          if (data.job_id) {
             // Check job status
             setTimeout(() => checkJobStatus(data.job_id), 3000);
           }
           
         } else {
-          // Error response
-          let errorMessage = data.message || 'An error occurred during processing';
-          
-          // Add helpful error messages
-          if (errorMessage.includes('Permission denied')) {
-            errorMessage += '<br><br><strong>Solution:</strong><br>' +
-              '1. Check that the temp_files directory exists<br>' +
-              '2. Ensure the application has write permissions<br>' +
-              '3. Try restarting the application';
-          } else if (errorMessage.includes('401') || errorMessage.includes('authentication')) {
-            errorMessage += '<br><br><strong>Solution:</strong><br>' +
-              '1. Check your Mapbox credentials in the .env file<br>' +
-              '2. Ensure your token has tilesets:write scope<br>' +
-              '3. Verify your username is correct';
-          }
-          
           resultDiv.innerHTML = `
             <div class="alert alert-danger mt-3">
               <h5>❌ Error</h5>
-              <div>${errorMessage}</div>
+              <div>${data.message || 'An error occurred during processing'}</div>
             </div>
           `;
-          
-          updateProgress(4, 100, 'Error occurred');
         }
         
       } catch (error) {
@@ -743,16 +685,8 @@
           <div class="alert alert-danger mt-3">
             <h5>❌ Network Error</h5>
             <div>Failed to connect to server: ${error.message}</div>
-            <br>
-            <strong>Please check:</strong>
-            <ul>
-              <li>The server is running (uvicorn app:app)</li>
-              <li>You're accessing the correct URL</li>
-              <li>No firewall is blocking the connection</li>
-            </ul>
           </div>
         `;
-        updateProgress(4, 100, 'Network error');
       } finally {
         submitBtn.disabled = false;
         btnText.style.display = 'inline-block';
@@ -762,63 +696,25 @@
     
     // Check job status
     async function checkJobStatus(jobId) {
+      const username = document.getElementById('mapboxUsername').value;
+      const token = document.getElementById('mapboxToken').value;
+      
       try {
-        const response = await fetch(`/check-job/${jobId}`);
+        const response = await fetch(`/check-job/${jobId}?username=${username}&token=${token}`);
         const status = await response.json();
         
         if (status.stage === 'success') {
           updateProgress(4, 100, 'Tileset published successfully!');
         } else if (status.stage === 'failed') {
           updateProgress(4, 100, 'Tileset publication failed');
-          
-          // Show error details if available
-          if (status.error || status.errors) {
-            const resultDiv = document.getElementById('result');
-            resultDiv.innerHTML += `
-              <div class="alert alert-warning mt-3">
-                <strong>⚠️ Publishing Error:</strong><br>
-                ${status.error || JSON.stringify(status.errors)}
-              </div>
-            `;
-          }
         } else {
-          updateProgress(3, 75, `Publishing tileset... (${status.stage || 'processing'})`);
+          updateProgress(3, 75, `Publishing tileset... (${status.stage})`);
           setTimeout(() => checkJobStatus(jobId), 5000);
         }
       } catch (error) {
         console.error('Error checking job status:', error);
       }
     }
-    
-    // Check server health on load
-    window.addEventListener('load', async function() {
-      try {
-        const response = await fetch('/health');
-        const health = await response.json();
-        
-        if (!health.mapbox_configured) {
-          const statusInfo = document.querySelector('.status-info');
-          statusInfo.innerHTML += `
-            <div class="mt-2 text-warning">
-              <strong>⚠️ Note:</strong> Mapbox credentials not configured. 
-              The app will process files locally but won't upload to Mapbox. 
-              Set MAPBOX_TOKEN and MAPBOX_USERNAME in your .env file to enable uploads.
-            </div>
-          `;
-        }
-      } catch (error) {
-        console.log('Server health check failed:', error);
-      }
-    });
   </script>
 </body>
-</html> (data.previews && data.session_id) {
-            displayPreviews(data.previews, data.session_id);
-          }
-          
-          let resultHtml = `
-            <div class="metadata-card">
-              <h5>📊 File Analysis</h5>
-          `;
-          
-          if
+</html>
