@@ -1,0 +1,1111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Weather Visualization - {{ config.tileset_id }}</title>
+    <script src='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js'></script>
+    <link href='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css' rel='stylesheet' />
+    <style>
+        body { 
+            margin: 0; 
+            padding: 0; 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            overflow: hidden;
+        }
+        #map { 
+            position: absolute; 
+            top: 0; 
+            bottom: 0; 
+            width: 100%; 
+        }
+        #wind-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+            z-index: 100;
+            display: none;
+        }
+        .control-panel {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.15);
+            width: 360px;
+            max-height: calc(100vh - 40px);
+            overflow-y: auto;
+            backdrop-filter: blur(10px);
+            z-index: 200;
+        }
+        .variable-selector {
+            margin-bottom: 24px;
+        }
+        .variable-option {
+            display: flex;
+            align-items: center;
+            padding: 12px;
+            margin: 8px 0;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .variable-option:hover {
+            border-color: #3b82f6;
+            background: #f0f9ff;
+        }
+        .variable-option.active {
+            border-color: #3b82f6;
+            background: #eff6ff;
+        }
+        .variable-icon {
+            font-size: 24px;
+            margin-right: 12px;
+        }
+        .variable-info {
+            flex: 1;
+        }
+        .variable-name {
+            font-weight: 600;
+            color: #1f2937;
+        }
+        .variable-units {
+            font-size: 12px;
+            color: #6b7280;
+        }
+        .layer-controls {
+            background: #f9fafb;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+        .slider-group {
+            margin: 12px 0;
+        }
+        .slider-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 13px;
+            color: #6b7280;
+            margin-bottom: 6px;
+        }
+        .slider {
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: #e5e7eb;
+            outline: none;
+            -webkit-appearance: none;
+        }
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #3b82f6;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        .export-panel {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 10px;
+            padding: 16px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+            backdrop-filter: blur(10px);
+            z-index: 200;
+        }
+        .export-btn {
+            background: #10b981;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            margin: 4px;
+        }
+        .export-btn:hover {
+            background: #059669;
+        }
+        .legend-container {
+            position: absolute;
+            bottom: 100px;
+            left: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            z-index: 200;
+        }
+        .legend-item {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 8px;
+            padding: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            backdrop-filter: blur(10px);
+        }
+        .legend-title {
+            font-weight: 600;
+            font-size: 13px;
+            margin-bottom: 8px;
+        }
+        .color-bar {
+            height: 20px;
+            border-radius: 4px;
+            width: 200px;
+            margin-bottom: 4px;
+        }
+        .legend-labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            color: #6b7280;
+        }
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.9);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid #e5e7eb;
+            border-top-color: #3b82f6;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .info-panel {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 10px;
+            padding: 12px 20px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+            backdrop-filter: blur(10px);
+            font-size: 13px;
+            display: none;
+            z-index: 200;
+        }
+        .info-panel.visible {
+            display: block;
+        }
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 4px 0;
+            min-width: 200px;
+        }
+        .info-value {
+            font-weight: 600;
+            margin-left: 12px;
+        }
+        .btn {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 10px 18px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            width: 100%;
+            margin-top: 8px;
+            transition: all 0.2s;
+        }
+        .btn:hover {
+            background: #2563eb;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        }
+        .btn-secondary {
+            background: #6b7280;
+        }
+        .btn-secondary:hover {
+            background: #4b5563;
+        }
+        .error-message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            display: none;
+            z-index: 1100;
+            max-width: 400px;
+            text-align: center;
+        }
+        .error-message h3 {
+            color: #ef4444;
+            margin-top: 0;
+        }
+        select {
+            width: 100%;
+            padding: 8px;
+            margin-top: 4px;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            font-size: 14px;
+            background: white;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <canvas id="wind-canvas"></canvas>
+    
+    <div class="loading-overlay" id="loadingOverlay">
+        <div>
+            <div class="loading-spinner"></div>
+            <p style="margin-top: 16px; color: #4b5563;">Loading weather data...</p>
+        </div>
+    </div>
+    
+    <div class="error-message" id="errorMessage">
+        <h3>Error Loading Visualization</h3>
+        <p id="errorText"></p>
+        <button class="btn" onclick="location.reload()">Reload Page</button>
+    </div>
+    
+    <div class="control-panel" style="display: none;" id="controlPanel">
+        <h3 style="margin-top: 0; margin-bottom: 20px;">Weather Variables</h3>
+        
+        <div class="variable-selector">
+            <!-- Scalar Variables -->
+            {% for var in config.variables %}
+            <div class="variable-option" data-variable="{{ var.name }}" data-type="scalar" onclick="toggleVariable('{{ var.name }}', 'scalar')">
+                <div class="variable-icon">
+                    {% if 'temp' in var.name.lower() %}🌡️
+                    {% elif 'press' in var.name.lower() %}📊
+                    {% elif 'humid' in var.name.lower() %}💧
+                    {% elif 'precip' in var.name.lower() %}🌧️
+                    {% elif 'cloud' in var.name.lower() %}☁️
+                    {% else %}📈{% endif %}
+                </div>
+                <div class="variable-info">
+                    <div class="variable-name">{{ var.display_name }}</div>
+                    <div class="variable-units">{{ var.units }}</div>
+                </div>
+            </div>
+            {% endfor %}
+            
+            <!-- Vector Fields -->
+            {% for field in config.vector_fields %}
+            <div class="variable-option" data-variable="{{ field.name }}" data-type="vector" onclick="toggleVariable('{{ field.name }}', 'vector')">
+                <div class="variable-icon">💨</div>
+                <div class="variable-info">
+                    <div class="variable-name">{{ field.name|title }} Field</div>
+                    <div class="variable-units">{{ field.units }}</div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        
+        <div id="activeLayerControls"></div>
+        
+        <button class="btn" onclick="resetView()">🔄 Reset View</button>
+        <button class="btn btn-secondary" onclick="captureScreenshot()">📸 Screenshot</button>
+    </div>
+    
+    <div class="legend-container" id="legendContainer"></div>
+    
+    <div class="info-panel" id="infoPanel">
+        <div id="cursorInfo">
+            <div class="info-row">
+                <span>Location:</span>
+                <span class="info-value" id="locationInfo">-</span>
+            </div>
+            <div id="dataValues"></div>
+        </div>
+    </div>
+    
+    <div class="export-panel" style="display: none;" id="exportPanel">
+        <button class="export-btn" onclick="exportData('geotiff')">📥 GeoTIFF</button>
+        <button class="export-btn" onclick="exportData('netcdf')">📊 NetCDF</button>
+        <button class="export-btn" onclick="exportData('json')">📄 JSON</button>
+        <button class="export-btn" style="background: #6366f1;" onclick="captureScreenshot()">📸 Screenshot</button>
+    </div>
+
+    <script>
+        // Configuration from server
+        console.log('Starting visualization...');
+        const CONFIG = {{ config | tojson }};
+        const TILESET_ID = CONFIG.tileset_id;
+        const MAPBOX_TOKEN = CONFIG.mapbox_token;
+        
+        if (!MAPBOX_TOKEN) {
+            showError('Mapbox token is missing. Please check your configuration.');
+        }
+        
+        mapboxgl.accessToken = MAPBOX_TOKEN;
+        
+        // Global state
+        let map;
+        let activeVariables = new Map();
+        let windAnimationSystem = null;
+        let mapLoaded = false;
+        
+        // Color schemes
+        const colorSchemes = {
+            thermal: {
+                name: 'Thermal',
+                stops: [
+                    [0, '#0000ff'],
+                    [0.2, '#00ffff'],
+                    [0.4, '#00ff00'],
+                    [0.6, '#ffff00'],
+                    [0.8, '#ff8800'],
+                    [1, '#ff0000']
+                ],
+                gradient: 'linear-gradient(to right, #0000ff, #00ffff, #00ff00, #ffff00, #ff8800, #ff0000)'
+            },
+            viridis: {
+                name: 'Viridis',
+                stops: [
+                    [0, '#440154'],
+                    [0.2, '#3e4989'],
+                    [0.4, '#26828e'],
+                    [0.6, '#35b779'],
+                    [0.8, '#6dcd59'],
+                    [1, '#fde725']
+                ],
+                gradient: 'linear-gradient(to right, #440154, #3e4989, #26828e, #35b779, #6dcd59, #fde725)'
+            },
+            plasma: {
+                name: 'Plasma',
+                stops: [
+                    [0, '#0d0887'],
+                    [0.25, '#6a00a8'],
+                    [0.5, '#b12a90'],
+                    [0.75, '#e16462'],
+                    [1, '#fca636']
+                ],
+                gradient: 'linear-gradient(to right, #0d0887, #6a00a8, #b12a90, #e16462, #fca636)'
+            },
+            cool: {
+                name: 'Cool',
+                stops: [
+                    [0, '#0000ff'],
+                    [0.5, '#00ffff'],
+                    [1, '#ffffff']
+                ],
+                gradient: 'linear-gradient(to right, #0000ff, #00ffff, #ffffff)'
+            }
+        };
+        
+        // Error handling
+        function showError(message) {
+            console.error('Error:', message);
+            document.getElementById('loadingOverlay').style.display = 'none';
+            document.getElementById('errorMessage').style.display = 'block';
+            document.getElementById('errorText').textContent = message;
+        }
+        
+        // Initialize map
+        async function initializeVisualization() {
+            try {
+                console.log('Creating map...');
+                
+                // Create map
+                map = new mapboxgl.Map({
+                    container: 'map',
+                    style: 'mapbox://styles/mapbox/dark-v11',
+                    center: [-98, 38],
+                    zoom: 4
+                });
+                
+                // Handle map load event
+                map.on('load', async () => {
+                    console.log('Map loaded successfully');
+                    mapLoaded = true;
+                    
+                    try {
+                        await setupDataSources();
+                        await setupWindAnimation();
+                        setupEventHandlers();
+                        
+                        // Hide loading and show controls
+                        hideLoading();
+                        showControls();
+                        
+                        console.log('Visualization ready');
+                    } catch (error) {
+                        console.error('Setup error:', error);
+                        showError('Failed to setup visualization: ' + error.message);
+                    }
+                });
+                
+                // Handle map error
+                map.on('error', (e) => {
+                    console.error('Map error:', e);
+                    showError('Map failed to load. Please check your Mapbox token and internet connection.');
+                });
+                
+                // Add controls
+                map.addControl(new mapboxgl.NavigationControl());
+                map.addControl(new mapboxgl.ScaleControl({ maxWidth: 200, unit: 'metric' }), 'bottom-left');
+                
+                // Set a timeout for map loading
+                setTimeout(() => {
+                    if (!mapLoaded) {
+                        showError('Map is taking too long to load. Please check your internet connection and Mapbox token.');
+                    }
+                }, 30000); // 30 seconds timeout
+                
+            } catch (error) {
+                console.error('Initialization error:', error);
+                showError('Failed to initialize map: ' + error.message);
+            }
+        }
+        
+        // Setup data sources
+        async function setupDataSources() {
+            console.log('Setting up data sources...');
+            
+            try {
+                // Add the main tileset source
+                if (!map.getSource('weather-tileset')) {
+                    map.addSource('weather-tileset', {
+                        type: 'raster',
+                        url: `mapbox://${TILESET_ID}`,
+                        tileSize: 512
+                    });
+                    console.log('Added tileset source:', TILESET_ID);
+                }
+                
+                // Create placeholder layers for each variable (initially hidden)
+                CONFIG.variables.forEach(variable => {
+                    const layerId = `layer-${variable.name}`;
+                    
+                    if (!map.getLayer(layerId)) {
+                        map.addLayer({
+                            id: layerId,
+                            type: 'raster',
+                            source: 'weather-tileset',
+                            paint: {
+                                'raster-opacity': 0,
+                                'raster-resampling': 'linear',
+                                'raster-fade-duration': 0
+                            },
+                            layout: {
+                                'visibility': 'none'
+                            }
+                        });
+                        console.log('Added layer:', layerId);
+                    }
+                });
+                
+            } catch (error) {
+                console.error('Error setting up data sources:', error);
+                throw error;
+            }
+        }
+        
+        // Setup wind animation system
+        async function setupWindAnimation() {
+            console.log('Setting up wind animation...');
+            
+            if (CONFIG.vector_fields && CONFIG.vector_fields.length > 0) {
+                try {
+                    // Initialize wind particle system
+                    windAnimationSystem = new WindParticleSystem('wind-canvas', map);
+                    console.log('Wind animation system initialized');
+                } catch (error) {
+                    console.error('Failed to setup wind animation:', error);
+                    // Don't throw - wind animation is optional
+                }
+            }
+        }
+        
+        // Toggle variable visibility
+        window.toggleVariable = async function(variableName, type) {
+            console.log('Toggling variable:', variableName, type);
+            
+            const option = document.querySelector(`[data-variable="${variableName}"]`);
+            if (!option) return;
+            
+            const isActive = option.classList.contains('active');
+            
+            if (isActive) {
+                // Deactivate
+                option.classList.remove('active');
+                deactivateVariable(variableName, type);
+            } else {
+                // Activate
+                option.classList.add('active');
+                await activateVariable(variableName, type);
+            }
+            
+            updateLayerControls();
+            updateLegends();
+        }
+        
+        // Activate a variable layer
+        async function activateVariable(variableName, type) {
+            console.log('Activating variable:', variableName);
+            
+            try {
+                if (type === 'scalar') {
+                    // Show raster layer
+                    const layerId = `layer-${variableName}`;
+                    map.setLayoutProperty(layerId, 'visibility', 'visible');
+                    map.setPaintProperty(layerId, 'raster-opacity', 0.7);
+                    
+                    // Store active variable info
+                    const varConfig = CONFIG.variables.find(v => v.name === variableName);
+                    activeVariables.set(variableName, {
+                        type: 'scalar',
+                        layerId: layerId,
+                        config: varConfig,
+                        opacity: 0.7,
+                        colorScheme: 'viridis'
+                    });
+                    
+                } else if (type === 'vector') {
+                    // Activate wind animation
+                    if (windAnimationSystem) {
+                        try {
+                            const windData = await fetchWindGrid(variableName);
+                            windAnimationSystem.setWindData(windData);
+                            windAnimationSystem.start();
+                            
+                            activeVariables.set(variableName, {
+                                type: 'vector',
+                                config: CONFIG.vector_fields.find(f => f.name === variableName),
+                                particleCount: 5000,
+                                animationSpeed: 1.0
+                            });
+                        } catch (error) {
+                            console.error('Failed to load wind data:', error);
+                            alert('Failed to load wind data. Please try again.');
+                            document.querySelector(`[data-variable="${variableName}"]`).classList.remove('active');
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error activating variable:', error);
+                alert('Failed to activate layer. Please try again.');
+                document.querySelector(`[data-variable="${variableName}"]`).classList.remove('active');
+            }
+        }
+        
+        // Deactivate a variable layer
+        function deactivateVariable(variableName, type) {
+            console.log('Deactivating variable:', variableName);
+            
+            if (type === 'scalar') {
+                const layerId = `layer-${variableName}`;
+                map.setLayoutProperty(layerId, 'visibility', 'none');
+            } else if (type === 'vector' && windAnimationSystem) {
+                windAnimationSystem.stop();
+            }
+            
+            activeVariables.delete(variableName);
+        }
+        
+        // Fetch wind grid data
+        async function fetchWindGrid(variableName) {
+            const bounds = map.getBounds();
+            const tilesetIdPart = TILESET_ID.includes('.') ? TILESET_ID.split('.')[1] : TILESET_ID;
+            
+            const url = `/api/wind-grid/${tilesetIdPart}?` + new URLSearchParams({
+                west: bounds.getWest(),
+                south: bounds.getSouth(),
+                east: bounds.getEast(),
+                north: bounds.getNorth(),
+                resolution: 50
+            });
+            
+            console.log('Fetching wind data from:', url);
+            
+            const response = await fetch(url);
+            
+            if (!response.ok) {
+                throw new Error('Failed to fetch wind data');
+            }
+            
+            const data = await response.json();
+            return data;
+        }
+        
+        // Update layer controls UI
+        function updateLayerControls() {
+            const container = document.getElementById('activeLayerControls');
+            container.innerHTML = '';
+            
+            activeVariables.forEach((info, varName) => {
+                const controls = document.createElement('div');
+                controls.className = 'layer-controls';
+                
+                if (info.type === 'scalar') {
+                    controls.innerHTML = `
+                        <h4 style="margin-top: 0;">${info.config.display_name}</h4>
+                        <div class="slider-group">
+                            <div class="slider-label">
+                                <span>Opacity</span>
+                                <span id="opacity-${varName}">${Math.round(info.opacity * 100)}%</span>
+                            </div>
+                            <input type="range" class="slider" min="0" max="100" 
+                                   value="${info.opacity * 100}"
+                                   oninput="updateLayerOpacity('${varName}', this.value)">
+                        </div>
+                        <div class="slider-group">
+                            <label>Color Scheme</label>
+                            <select onchange="updateColorScheme('${varName}', this.value)">
+                                ${Object.keys(colorSchemes).map(scheme => 
+                                    `<option value="${scheme}" ${info.colorScheme === scheme ? 'selected' : ''}>
+                                        ${colorSchemes[scheme].name}
+                                    </option>`
+                                ).join('')}
+                            </select>
+                        </div>
+                    `;
+                } else if (info.type === 'vector') {
+                    controls.innerHTML = `
+                        <h4 style="margin-top: 0;">Wind Animation</h4>
+                        <div class="slider-group">
+                            <div class="slider-label">
+                                <span>Particles</span>
+                                <span id="particles-${varName}">${info.particleCount}</span>
+                            </div>
+                            <input type="range" class="slider" min="1000" max="10000" step="500"
+                                   value="${info.particleCount}"
+                                   oninput="updateWindParticles(this.value, '${varName}')">
+                        </div>
+                        <div class="slider-group">
+                            <div class="slider-label">
+                                <span>Speed</span>
+                                <span id="speed-${varName}">${info.animationSpeed}x</span>
+                            </div>
+                            <input type="range" class="slider" min="0.2" max="3" step="0.1"
+                                   value="${info.animationSpeed}"
+                                   oninput="updateWindSpeed(this.value, '${varName}')">
+                        </div>
+                    `;
+                }
+                
+                container.appendChild(controls);
+            });
+        }
+        
+        // Update legends
+        function updateLegends() {
+            const container = document.getElementById('legendContainer');
+            container.innerHTML = '';
+            
+            activeVariables.forEach((info, varName) => {
+                if (info.type === 'scalar') {
+                    const legend = document.createElement('div');
+                    legend.className = 'legend-item';
+                    const scheme = colorSchemes[info.colorScheme];
+                    legend.innerHTML = `
+                        <div class="legend-title">${info.config.display_name} (${info.config.units})</div>
+                        <div class="color-bar" style="background: ${scheme.gradient};"></div>
+                        <div class="legend-labels">
+                            <span>${info.config.range[0].toFixed(1)}</span>
+                            <span>${info.config.range[1].toFixed(1)}</span>
+                        </div>
+                    `;
+                    container.appendChild(legend);
+                }
+            });
+        }
+        
+        // Control functions
+        window.updateLayerOpacity = function(varName, value) {
+            const opacity = value / 100;
+            const info = activeVariables.get(varName);
+            if (info) {
+                info.opacity = opacity;
+                map.setPaintProperty(info.layerId, 'raster-opacity', opacity);
+                document.getElementById(`opacity-${varName}`).textContent = `${value}%`;
+            }
+        }
+        
+        window.updateColorScheme = function(varName, scheme) {
+            const info = activeVariables.get(varName);
+            if (info) {
+                info.colorScheme = scheme;
+                updateLegends();
+            }
+        }
+        
+        window.updateWindParticles = function(count, varName) {
+            const info = activeVariables.get(varName);
+            if (info && windAnimationSystem) {
+                info.particleCount = parseInt(count);
+                windAnimationSystem.setParticleCount(parseInt(count));
+                document.getElementById(`particles-${varName}`).textContent = count;
+            }
+        }
+        
+        window.updateWindSpeed = function(speed, varName) {
+            const info = activeVariables.get(varName);
+            if (info && windAnimationSystem) {
+                info.animationSpeed = parseFloat(speed);
+                windAnimationSystem.setAnimationSpeed(parseFloat(speed));
+                document.getElementById(`speed-${varName}`).textContent = `${speed}x`;
+            }
+        }
+        
+        // Export functions
+        window.exportData = async function(format) {
+            const bounds = map.getBounds();
+            const variables = Array.from(activeVariables.keys()).join(',');
+            
+            if (!variables) {
+                alert('Please select at least one variable to export.');
+                return;
+            }
+            
+            const tilesetIdPart = TILESET_ID.includes('.') ? TILESET_ID.split('.')[1] : TILESET_ID;
+            
+            const formData = new FormData();
+            formData.append('tileset_id', tilesetIdPart);
+            formData.append('variables', variables);
+            formData.append('bounds', `${bounds.getWest()},${bounds.getSouth()},${bounds.getEast()},${bounds.getNorth()}`);
+            formData.append('format', format);
+            formData.append('resolution', '100');
+            
+            try {
+                const response = await fetch('/api/export-visualization', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `weather_export_${Date.now()}.${format}`;
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                } else {
+                    alert('Export failed. Please try again.');
+                }
+            } catch (error) {
+                console.error('Export failed:', error);
+                alert('Export failed. Please try again.');
+            }
+        }
+        
+        window.captureScreenshot = function() {
+            const canvas = map.getCanvas();
+            canvas.toBlob(blob => {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `weather_visualization_${Date.now()}.png`;
+                a.click();
+                URL.revokeObjectURL(url);
+            });
+        }
+        
+        window.resetView = function() {
+            map.flyTo({
+                center: [-98, 38],
+                zoom: 4,
+                duration: 1500
+            });
+        }
+        
+        // Setup event handlers
+        function setupEventHandlers() {
+            console.log('Setting up event handlers...');
+            
+            let queryTimeout;
+            
+            // Update cursor info on mouse move
+            map.on('mousemove', async (e) => {
+                const coords = e.lngLat;
+                document.getElementById('locationInfo').textContent = 
+                    `${coords.lat.toFixed(3)}°, ${coords.lng.toFixed(3)}°`;
+                
+                const variables = Array.from(activeVariables.keys()).join(',');
+                if (!variables) {
+                    document.getElementById('infoPanel').classList.remove('visible');
+                    return;
+                }
+                
+                document.getElementById('infoPanel').classList.add('visible');
+                
+                // Debounce queries
+                clearTimeout(queryTimeout);
+                queryTimeout = setTimeout(async () => {
+                    try {
+                        const tilesetIdPart = TILESET_ID.includes('.') ? TILESET_ID.split('.')[1] : TILESET_ID;
+                        
+                        const formData = new FormData();
+                        formData.append('tileset_id', tilesetIdPart);
+                        formData.append('latitude', coords.lat);
+                        formData.append('longitude', coords.lng);
+                        formData.append('variables', variables);
+                        
+                        const response = await fetch('/api/query-point', {
+                            method: 'POST',
+                            body: formData
+                        });
+                        
+                        if (response.ok) {
+                            const data = await response.json();
+                            updateDataValues(data.values);
+                        }
+                    } catch (error) {
+                        console.error('Failed to query point:', error);
+                    }
+                }, 100);
+            });
+            
+            // Hide info panel when mouse leaves map
+            map.on('mouseout', () => {
+                document.getElementById('infoPanel').classList.remove('visible');
+            });
+            
+            // Keyboard shortcuts
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    // Deactivate all layers
+                    activeVariables.forEach((info, varName) => {
+                        const option = document.querySelector(`[data-variable="${varName}"]`);
+                        if (option && option.classList.contains('active')) {
+                            option.click();
+                        }
+                    });
+                }
+            });
+        }
+        
+        function updateDataValues(values) {
+            const container = document.getElementById('dataValues');
+            container.innerHTML = Object.entries(values).map(([key, data]) => `
+                <div class="info-row">
+                    <span>${key}:</span>
+                    <span class="info-value">${data.value} ${data.units}</span>
+                </div>
+            `).join('');
+        }
+        
+        // Wind particle system class
+        class WindParticleSystem {
+            constructor(canvasId, map) {
+                this.canvas = document.getElementById(canvasId);
+                this.ctx = this.canvas.getContext('2d');
+                this.map = map;
+                this.particles = [];
+                this.windData = null;
+                this.isRunning = false;
+                this.particleCount = 5000;
+                this.animationSpeed = 1.0;
+                this.fadeOpacity = 0.97;
+                
+                this.resizeCanvas();
+                window.addEventListener('resize', () => this.resizeCanvas());
+            }
+            
+            resizeCanvas() {
+                const container = this.map.getContainer();
+                this.canvas.width = container.offsetWidth;
+                this.canvas.height = container.offsetHeight;
+            }
+            
+            setWindData(data) {
+                this.windData = data;
+                this.initParticles();
+            }
+            
+            setParticleCount(count) {
+                this.particleCount = count;
+                this.initParticles();
+            }
+            
+            setAnimationSpeed(speed) {
+                this.animationSpeed = speed;
+            }
+            
+            initParticles() {
+                this.particles = [];
+                for (let i = 0; i < this.particleCount; i++) {
+                    this.particles.push(this.createParticle());
+                }
+            }
+            
+            createParticle() {
+                const bounds = this.map.getBounds();
+                return {
+                    lng: bounds.getWest() + Math.random() * (bounds.getEast() - bounds.getWest()),
+                    lat: bounds.getSouth() + Math.random() * (bounds.getNorth() - bounds.getSouth()),
+                    age: Math.random() * 100,
+                    path: []
+                };
+            }
+            
+            updateParticles() {
+                if (!this.windData) return;
+                
+                const bounds = this.map.getBounds();
+                
+                this.particles.forEach(particle => {
+                    // Get wind at particle location
+                    const wind = this.interpolateWind(particle.lng, particle.lat);
+                    
+                    // Update position
+                    const scale = 0.0001 * this.animationSpeed;
+                    particle.lng += wind.u * scale;
+                    particle.lat += wind.v * scale * 0.7;
+                    
+                    // Track path
+                    const point = this.map.project([particle.lng, particle.lat]);
+                    particle.path.push({ x: point.x, y: point.y });
+                    
+                    if (particle.path.length > 30) {
+                        particle.path.shift();
+                    }
+                    
+                    particle.age++;
+                    
+                    // Reset if needed
+                    if (particle.lng < bounds.getWest() || particle.lng > bounds.getEast() ||
+                        particle.lat < bounds.getSouth() || particle.lat > bounds.getNorth() ||
+                        particle.age > 100) {
+                        Object.assign(particle, this.createParticle());
+                    }
+                });
+            }
+            
+            interpolateWind(lng, lat) {
+                if (!this.windData || !this.windData.grid) {
+                    return { u: 0, v: 0 };
+                }
+                
+                const { lons, lats, shape } = this.windData.grid;
+                const u_data = this.windData.u_component;
+                const v_data = this.windData.v_component;
+                
+                // Find grid indices
+                let i = 0, j = 0;
+                for (i = 0; i < lons.length - 1; i++) {
+                    if (lng >= lons[i] && lng <= lons[i + 1]) break;
+                }
+                for (j = 0; j < lats.length - 1; j++) {
+                    if (lat >= lats[j] && lat <= lats[j + 1]) break;
+                }
+                
+                // Boundary check
+                if (i >= lons.length - 1) i = lons.length - 2;
+                if (j >= lats.length - 1) j = lats.length - 2;
+                if (i < 0) i = 0;
+                if (j < 0) j = 0;
+                
+                try {
+                    // Bilinear interpolation
+                    const fx = (lng - lons[i]) / (lons[i + 1] - lons[i]);
+                    const fy = (lat - lats[j]) / (lats[j + 1] - lats[j]);
+                    
+                    const idx00 = j * shape[1] + i;
+                    const idx10 = j * shape[1] + (i + 1);
+                    const idx01 = (j + 1) * shape[1] + i;
+                    const idx11 = (j + 1) * shape[1] + (i + 1);
+                    
+                    const u = (1 - fx) * (1 - fy) * u_data[idx00] +
+                             fx * (1 - fy) * u_data[idx10] +
+                             (1 - fx) * fy * u_data[idx01] +
+                             fx * fy * u_data[idx11];
+                             
+                    const v = (1 - fx) * (1 - fy) * v_data[idx00] +
+                             fx * (1 - fy) * v_data[idx10] +
+                             (1 - fx) * fy * v_data[idx01] +
+                             fx * fy * v_data[idx11];
+                    
+                    return { u: u || 0, v: v || 0 };
+                } catch (e) {
+                    return { u: 0, v: 0 };
+                }
+            }
+            
+            draw() {
+                // Fade existing trails
+                this.ctx.globalCompositeOperation = 'destination-in';
+                this.ctx.fillStyle = `rgba(0, 0, 0, ${this.fadeOpacity})`;
+                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+                
+                // Draw new particle trails
+                this.ctx.globalCompositeOperation = 'source-over';
+                
+                this.particles.forEach(particle => {
+                    if (particle.path.length < 2) return;
+                    
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(particle.path[0].x, particle.path[0].y);
+                    
+                    for (let i = 1; i < particle.path.length; i++) {
+                        const alpha = i / particle.path.length;
+                        this.ctx.strokeStyle = `rgba(255, 255, 255, ${alpha * 0.8})`;
+                        this.ctx.lineWidth = 1.5 * alpha;
+                        this.ctx.lineTo(particle.path[i].x, particle.path[i].y);
+                        this.ctx.stroke();
+                        this.ctx.beginPath();
+                        this.ctx.moveTo(particle.path[i].x, particle.path[i].y);
+                    }
+                });
+            }
+            
+            animate() {
+                if (!this.isRunning) return;
+                
+                this.updateParticles();
+                this.draw();
+                requestAnimationFrame(() => this.animate());
+            }
+            
+            start() {
+                this.isRunning = true;
+                this.canvas.style.display = 'block';
+                this.animate();
+            }
+            
+            stop() {
+                this.isRunning = false;
+                this.canvas.style.display = 'none';
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+            }
+        }
+        
+        // Utility functions
+        function hideLoading() {
+            document.getElementById('loadingOverlay').style.display = 'none';
+        }
+        
+        function showControls() {
+            document.getElementById('controlPanel').style.display = 'block';
+            document.getElementById('exportPanel').style.display = 'block';
+        }
+        
+        // Initialize on load
+        console.log('Document ready, initializing...');
+        initializeVisualization();
+    </script>
+</body>
+</html>
