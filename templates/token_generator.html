@@ -288,6 +288,44 @@
             box-shadow: none;
             border-color: var(--mapbox-blue);
         }
+        
+        .cursor-pointer {
+            cursor: pointer;
+        }
+        
+        .quick-actions {
+            border-top: 1px solid #e9ecef;
+            padding-top: 1rem;
+        }
+        
+        @media (max-width: 768px) {
+            .quick-actions {
+                flex-direction: column;
+            }
+            
+            .quick-actions .btn {
+                width: 100%;
+                margin-bottom: 0.5rem;
+            }
+        }
+        
+        .nav-tabs .nav-link {
+            color: #495057;
+        }
+        
+        .nav-tabs .nav-link.active {
+            color: #4264fb;
+            font-weight: 500;
+        }
+        
+        pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        
+        .modal-lg {
+            max-width: 800px;
+        }
     </style>
 </head>
 <body>
@@ -555,6 +593,584 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        // Token generation state management
+        class TokenGeneratorUI {
+            constructor() {
+                this.currentStep = 1;
+                this.generatedToken = null;
+                this.masterTokenValidated = false;
+            }
+            
+            async validateMasterToken() {
+                const masterToken = document.getElementById('masterToken').value.trim();
+                const username = document.getElementById('username').value.trim();
+                
+                if (!masterToken || !username) {
+                    this.showError('Please enter both master token and username');
+                    return false;
+                }
+                
+                this.showLoading(true, 'Validating master token...');
+                
+                try {
+                    const response = await fetch(`/api/check-master-token?token=${encodeURIComponent(masterToken)}`);
+                    const result = await response.json();
+                    
+                    if (result.valid && result.has_tokens_write) {
+                        this.masterTokenValidated = true;
+                        this.showSuccess('Master token validated! It has tokens:write scope.');
+                        this.updateStep(2);
+                        return true;
+                    } else {
+                        this.showError('Master token is invalid or lacks tokens:write scope', result);
+                        return false;
+                    }
+                } catch (error) {
+                    this.showError('Failed to validate master token', error);
+                    return false;
+                } finally {
+                    this.showLoading(false);
+                }
+            }
+            
+            async generateToken() {
+                if (!this.masterTokenValidated) {
+                    const validated = await this.validateMasterToken();
+                    if (!validated) return;
+                }
+                
+                const masterToken = document.getElementById('masterToken').value.trim();
+                const username = document.getElementById('username').value.trim();
+                const tokenNote = document.getElementById('tokenNote').value.trim() || 'NetCDF Converter Token';
+                
+                // Collect selected scopes
+                const scopes = this.collectSelectedScopes();
+                
+                this.showLoading(true, 'Generating new token...');
+                this.updateStep(3);
+                
+                try {
+                    const response = await fetch('/api/generate-token', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            master_token: masterToken,
+                            username: username,
+                            note: tokenNote,
+                            scopes: scopes
+                        })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (response.ok && data.success) {
+                        this.generatedToken = data.token;
+                        this.showGeneratedToken(data);
+                        this.updateStep(3, 'completed');
+                    } else {
+                        this.showTokenError(data);
+                        this.updateStep(2);
+                    }
+                } catch (error) {
+                    this.showError('Network error during token generation', error);
+                    this.updateStep(2);
+                } finally {
+                    this.showLoading(false);
+                }
+            }
+            
+            collectSelectedScopes() {
+                // Required scopes are always included
+                const scopes = [
+                    'tilesets:write',
+                    'tilesets:read',
+                    'tilesets:list'
+                ];
+                
+                // Add optional scopes if selected
+                const optionalScopes = [
+                    'sources:write',
+                    'sources:read',
+                    'styles:read',
+                    'datasets:read',
+                    'uploads:read',
+                    'uploads:write'
+                ];
+                
+                optionalScopes.forEach(scope => {
+                    const checkbox = document.getElementById(`scope_${scope.replace(':', '_')}`);
+                    if (checkbox && checkbox.checked) {
+                        scopes.push(scope);
+                    }
+                });
+                
+                return scopes;
+            }
+            
+            showGeneratedToken(data) {
+                document.getElementById('resultSection').style.display = 'block';
+                document.getElementById('successResult').style.display = 'block';
+                document.getElementById('errorResult').style.display = 'none';
+                
+                // Display token
+                document.getElementById('generatedToken').textContent = data.token;
+                
+                // Display token details
+                const details = {
+                    id: data.id,
+                    note: data.note,
+                    scopes: data.scopes,
+                    created: new Date(data.created).toLocaleString(),
+                    expires: data.expires || 'Never'
+                };
+                
+                document.getElementById('tokenDetails').textContent = JSON.stringify(details, null, 2);
+                
+                // Add quick actions
+                this.addQuickActions(data.token);
+                
+                // Smooth scroll to results
+                document.getElementById('resultSection').scrollIntoView({ 
+                    behavior: 'smooth',
+                    block: 'start'
+                });
+                
+                // Show success notification
+                this.showNotification('Token created successfully! Copy it now - it won\'t be shown again.', 'success');
+            }
+            
+            showTokenError(data) {
+                document.getElementById('resultSection').style.display = 'block';
+                document.getElementById('successResult').style.display = 'none';
+                document.getElementById('errorResult').style.display = 'block';
+                
+                let errorHtml = `<p class="mb-2">${data.error || 'Unknown error occurred'}</p>`;
+                
+                // Add specific guidance based on error
+                if (data.error?.includes('401') || data.error?.includes('Unauthorized')) {
+                    errorHtml += this.getUnauthorizedErrorHelp();
+                } else if (data.error?.includes('username')) {
+                    errorHtml += this.getUsernameErrorHelp();
+                } else if (data.error?.includes('rate limit')) {
+                    errorHtml += this.getRateLimitErrorHelp();
+                }
+                
+                // Add details if available
+                if (data.details) {
+                    errorHtml += `
+                        <details class="mt-3">
+                            <summary class="text-muted cursor-pointer">Technical details</summary>
+                            <pre class="mt-2 p-2 bg-light rounded">${JSON.stringify(data.details, null, 2)}</pre>
+                        </details>
+                    `;
+                }
+                
+                document.getElementById('errorMessage').innerHTML = errorHtml;
+                
+                // Smooth scroll to error
+                document.getElementById('resultSection').scrollIntoView({ 
+                    behavior: 'smooth',
+                    block: 'start'
+                });
+            }
+            
+            getUnauthorizedErrorHelp() {
+                return `
+                    <div class="mt-3">
+                        <h6>How to fix this:</h6>
+                        <ol>
+                            <li>Go to <a href="https://account.mapbox.com/access-tokens/" target="_blank" class="text-primary">
+                                Mapbox Tokens <i class="fas fa-external-link-alt fa-sm"></i>
+                            </a></li>
+                            <li>Create a new token</li>
+                            <li>Under "Secret scopes", check <code>tokens:write</code></li>
+                            <li>Create the token and use it as your master token here</li>
+                        </ol>
+                        <div class="mt-3">
+                            <button class="btn btn-primary btn-sm" onclick="window.open('https://account.mapbox.com/access-tokens/', '_blank')">
+                                <i class="fas fa-external-link-alt"></i> Open Mapbox Dashboard
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            getUsernameErrorHelp() {
+                return `
+                    <div class="mt-3">
+                        <h6>Username Issues:</h6>
+                        <ul>
+                            <li>Check your username at <a href="https://account.mapbox.com/" target="_blank">account.mapbox.com</a></li>
+                            <li>Username must match the account that owns the master token</li>
+                            <li>Username is case-sensitive</li>
+                        </ul>
+                    </div>
+                `;
+            }
+            
+            getRateLimitErrorHelp() {
+                return `
+                    <div class="mt-3 alert alert-warning">
+                        <h6>Rate Limited</h6>
+                        <p>You've made too many requests. Please wait a few minutes and try again.</p>
+                        <p>The generator will automatically retry in a moment...</p>
+                    </div>
+                `;
+            }
+            
+            addQuickActions(token) {
+                const actionsDiv = document.createElement('div');
+                actionsDiv.className = 'mt-4 d-flex gap-2 flex-wrap';
+                actionsDiv.innerHTML = `
+                    <button class="btn btn-success" onclick="testGeneratedToken('${token.substring(0, 20)}')">
+                        <i class="fas fa-check"></i> Test This Token
+                    </button>
+                    <button class="btn btn-secondary" onclick="downloadEnvFile('${token}')">
+                        <i class="fas fa-download"></i> Download .env
+                    </button>
+                    <button class="btn btn-info" onclick="showIntegrationGuide()">
+                        <i class="fas fa-book"></i> Integration Guide
+                    </button>
+                    <button class="btn btn-warning" onclick="copyTokenCommand('${token}')">
+                        <i class="fas fa-terminal"></i> Copy CLI Command
+                    </button>
+                `;
+                
+                const successResult = document.getElementById('successResult');
+                const existingActions = successResult.querySelector('.quick-actions');
+                if (existingActions) {
+                    existingActions.remove();
+                }
+                actionsDiv.classList.add('quick-actions');
+                successResult.appendChild(actionsDiv);
+            }
+            
+            updateStep(step, status = 'active') {
+                // Update step indicators
+                for (let i = 1; i <= 3; i++) {
+                    const stepEl = document.getElementById(`step${i}`);
+                    if (i < step) {
+                        stepEl.classList.add('completed');
+                        stepEl.classList.remove('active');
+                    } else if (i === step) {
+                        if (status === 'completed') {
+                            stepEl.classList.add('completed');
+                            stepEl.classList.remove('active');
+                        } else {
+                            stepEl.classList.add('active');
+                            stepEl.classList.remove('completed');
+                        }
+                    } else {
+                        stepEl.classList.remove('active', 'completed');
+                    }
+                }
+                
+                this.currentStep = step;
+            }
+            
+            showLoading(show, message = 'Processing...') {
+                const btn = document.getElementById('generateBtn');
+                if (show) {
+                    btn.disabled = true;
+                    btn.innerHTML = `<span class="spinner-border spinner-border-sm me-2"></span>${message}`;
+                } else {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-magic"></i> Generate Token';
+                }
+            }
+            
+            showError(message, details = null) {
+                this.showNotification(message, 'danger');
+                if (details) {
+                    console.error('Error details:', details);
+                }
+            }
+            
+            showSuccess(message) {
+                this.showNotification(message, 'success');
+            }
+            
+            showNotification(message, type = 'info') {
+                const notification = document.createElement('div');
+                notification.className = `alert alert-${type} alert-dismissible fade show position-fixed top-0 end-0 m-3`;
+                notification.style.zIndex = '9999';
+                notification.style.maxWidth = '400px';
+                notification.innerHTML = `
+                    ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                `;
+                
+                document.body.appendChild(notification);
+                
+                // Auto-hide after 5 seconds
+                setTimeout(() => {
+                    notification.classList.remove('show');
+                    setTimeout(() => notification.remove(), 300);
+                }, 5000);
+            }
+            
+            async copyToken() {
+                const tokenText = document.getElementById('generatedToken').textContent;
+                try {
+                    await navigator.clipboard.writeText(tokenText);
+                    const btn = document.querySelector('.copy-button');
+                    btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+                    btn.classList.add('copied');
+                    
+                    setTimeout(() => {
+                        btn.innerHTML = '<i class="fas fa-copy"></i> Copy';
+                        btn.classList.remove('copied');
+                    }, 2000);
+                } catch (error) {
+                    this.showError('Failed to copy token. Please copy manually.');
+                }
+            }
+            
+            reset() {
+                document.getElementById('resultSection').style.display = 'none';
+                document.getElementById('tokenNote').value = 'NetCDF Converter Token';
+                this.masterTokenValidated = false;
+                this.generatedToken = null;
+                this.updateStep(1);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        }
+
+        // Global instance
+        const tokenGenerator = new TokenGeneratorUI();
+
+        // Global functions referenced in HTML
+        async function generateToken() {
+            await tokenGenerator.generateToken();
+        }
+
+        function copyToken() {
+            tokenGenerator.copyToken();
+        }
+
+        function resetForm() {
+            tokenGenerator.reset();
+        }
+
+        // Additional helper functions
+        function testGeneratedToken(tokenPreview) {
+            const username = document.getElementById('username').value;
+            const fullToken = tokenGenerator.generatedToken;
+            
+            // Store token temporarily in sessionStorage for the test page
+            if (fullToken) {
+                sessionStorage.setItem('temp_test_token', fullToken);
+                sessionStorage.setItem('temp_test_username', username);
+            }
+            
+            window.open('/test-token', '_blank');
+        }
+
+        function downloadEnvFile(token) {
+            const username = document.getElementById('username').value;
+            const content = `# Mapbox Configuration
+# Generated on ${new Date().toISOString()}
+MAPBOX_TOKEN=${token}
+MAPBOX_USERNAME=${username}
+
+# Optional: Public token for frontend use
+# MAPBOX_PUBLIC_TOKEN=pk.your_public_token_here
+
+# Optional: Master token for creating new tokens (DO NOT COMMIT)
+# MAPBOX_MASTER_TOKEN=sk.your_master_token_here
+`;
+            
+            const blob = new Blob([content], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = '.env';
+            a.click();
+            URL.revokeObjectURL(url);
+            
+            tokenGenerator.showSuccess('Environment file downloaded!');
+        }
+
+        function copyTokenCommand(token) {
+            const username = document.getElementById('username').value;
+            const command = `export MAPBOX_TOKEN="${token}"\nexport MAPBOX_USERNAME="${username}"`;
+            
+            navigator.clipboard.writeText(command).then(() => {
+                tokenGenerator.showSuccess('CLI commands copied to clipboard!');
+            }).catch(() => {
+                // Fallback: show in a modal
+                showCommandModal(command);
+            });
+        }
+
+        function showCommandModal(command) {
+            const modal = document.createElement('div');
+            modal.className = 'modal fade';
+            modal.innerHTML = `
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">CLI Commands</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <p>Copy these commands to set up your environment:</p>
+                            <pre class="bg-light p-3 rounded">${command}</pre>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+            const bsModal = new bootstrap.Modal(modal);
+            bsModal.show();
+            
+            modal.addEventListener('hidden.bs.modal', () => {
+                modal.remove();
+            });
+        }
+
+        function showIntegrationGuide() {
+            const username = document.getElementById('username').value;
+            const token = tokenGenerator.generatedToken || 'your-token-here';
+            
+            const modal = document.createElement('div');
+            modal.className = 'modal fade';
+            modal.innerHTML = `
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">Integration Guide</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <ul class="nav nav-tabs" id="integrationTabs" role="tablist">
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link active" id="env-tab" data-bs-toggle="tab" data-bs-target="#env" type="button">
+                                        Environment Setup
+                                    </button>
+                                </li>
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link" id="python-tab" data-bs-toggle="tab" data-bs-target="#python" type="button">
+                                        Python Usage
+                                    </button>
+                                </li>
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link" id="cli-tab" data-bs-toggle="tab" data-bs-target="#cli" type="button">
+                                        CLI Usage
+                                    </button>
+                                </li>
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link" id="docker-tab" data-bs-toggle="tab" data-bs-target="#docker" type="button">
+                                        Docker Setup
+                                    </button>
+                                </li>
+                            </ul>
+                            
+                            <div class="tab-content mt-3" id="integrationContent">
+                                <div class="tab-pane fade show active" id="env" role="tabpanel">
+                                    <h6>1. Update Your Environment File</h6>
+                                    <pre class="bg-light p-3 rounded">MAPBOX_TOKEN=${token}
+MAPBOX_USERNAME=${username}</pre>
+                                    
+                                    <h6 class="mt-4">2. Load Environment Variables</h6>
+                                    <pre class="bg-light p-3 rounded"># Python
+from dotenv import load_dotenv
+load_dotenv()
+
+# Bash
+source .env
+
+# Windows CMD
+set /p MAPBOX_TOKEN=<.env</pre>
+                                </div>
+                                
+                                <div class="tab-pane fade" id="python" role="tabpanel">
+                                    <h6>Using the Token in Python</h6>
+                                    <pre class="bg-light p-3 rounded">import os
+from dotenv import load_dotenv
+from tileset_management import MapboxTilesetManager
+
+# Load environment
+load_dotenv()
+
+# Initialize manager
+manager = MapboxTilesetManager(
+    token=os.getenv('MAPBOX_TOKEN'),
+    username=os.getenv('MAPBOX_USERNAME')
+)
+
+# Upload NetCDF
+result = manager.process_netcdf_to_tileset(
+    'data.nc',
+    'my_tileset_id'
+)</pre>
+                                </div>
+                                
+                                <div class="tab-pane fade" id="cli" role="tabpanel">
+                                    <h6>CLI Commands</h6>
+                                    <pre class="bg-light p-3 rounded"># Upload a file
+python tileset_cli.py upload data.nc --tileset-id weather_2024
+
+# List tilesets
+python tileset_cli.py list
+
+# Query data
+python tileset_cli.py query-nc data.nc --variables temp,wind_u,wind_v
+
+# Batch upload
+python tileset_cli.py batch-upload /data/netcdf/ --pattern "*.nc"</pre>
+                                </div>
+                                
+                                <div class="tab-pane fade" id="docker" role="tabpanel">
+                                    <h6>Docker Environment</h6>
+                                    <pre class="bg-light p-3 rounded"># docker-compose.yml
+version: '3.8'
+services:
+  web:
+    build: .
+    env_file:
+      - .env
+    environment:
+      - MAPBOX_TOKEN=\${MAPBOX_TOKEN}
+      - MAPBOX_USERNAME=\${MAPBOX_USERNAME}</pre>
+                                    
+                                    <h6 class="mt-3">Run with Docker</h6>
+                                    <pre class="bg-light p-3 rounded">docker-compose up -d</pre>
+                                </div>
+                            </div>
+                            
+                            <div class="alert alert-info mt-4">
+                                <h6>Next Steps:</h6>
+                                <ol class="mb-0">
+                                    <li>Test your token: <a href="/test-token" target="_blank">Token Tester</a></li>
+                                    <li>Upload NetCDF files: <a href="/" target="_blank">Upload Page</a></li>
+                                    <li>View documentation: <a href="/docs" target="_blank">API Docs</a></li>
+                                </ol>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                            <a href="/" class="btn btn-primary">Go to Upload Page</a>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+            const bsModal = new bootstrap.Modal(modal);
+            bsModal.show();
+            
+            modal.addEventListener('hidden.bs.modal', () => {
+                modal.remove();
+            });
+        }
+
         // Auto-fill from URL parameters
         const urlParams = new URLSearchParams(window.location.search);
         const masterTokenFromUrl = urlParams.get('master_token');
@@ -563,159 +1179,58 @@
         if (masterTokenFromUrl) document.getElementById('masterToken').value = masterTokenFromUrl;
         if (usernameFromUrl) document.getElementById('username').value = usernameFromUrl;
 
-        async function generateToken() {
-            const masterToken = document.getElementById('masterToken').value.trim();
-            const username = document.getElementById('username').value.trim();
-            const tokenNote = document.getElementById('tokenNote').value.trim() || 'NetCDF Converter Token';
+        // Auto-validate master token on blur
+        document.addEventListener('DOMContentLoaded', () => {
+            const masterTokenInput = document.getElementById('masterToken');
+            const usernameInput = document.getElementById('username');
             
-            if (!masterToken || !username) {
-                alert('Please enter both master token and username');
-                return;
-            }
-
-            // Collect selected scopes
-            const scopes = [
-                'tilesets:write',
-                'tilesets:read',
-                'tilesets:list'
-            ];
-            
-            if (document.getElementById('scope_sources_write').checked) scopes.push('sources:write');
-            if (document.getElementById('scope_sources_read').checked) scopes.push('sources:read');
-            if (document.getElementById('scope_styles_read').checked) scopes.push('styles:read');
-
-            // Update UI
-            const btn = document.getElementById('generateBtn');
-            btn.disabled = true;
-            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Generating...';
-            
-            // Update steps
-            document.getElementById('step1').classList.add('completed');
-            document.getElementById('step2').classList.add('completed');
-            document.getElementById('step3').classList.add('active');
-
-            try {
-                // Call the backend endpoint
-                const response = await fetch('/api/generate-token', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        master_token: masterToken,
-                        username: username,
-                        note: tokenNote,
-                        scopes: scopes
-                    })
+            if (masterTokenInput) {
+                masterTokenInput.addEventListener('blur', async () => {
+                    if (masterTokenInput.value.trim() && usernameInput.value.trim()) {
+                        await tokenGenerator.validateMasterToken();
+                    }
                 });
-
-                const data = await response.json();
-
-                if (response.ok && data.success) {
-                    // Show success
-                    showSuccess(data);
-                } else {
-                    // Show error
-                    showError(data.error || 'Failed to generate token');
-                }
-            } catch (error) {
-                showError(`Network error: ${error.message}`);
-            } finally {
-                btn.disabled = false;
-                btn.innerHTML = '<i class="fas fa-magic"></i> Generate Token';
-            }
-        }
-
-        function showSuccess(data) {
-            document.getElementById('resultSection').style.display = 'block';
-            document.getElementById('successResult').style.display = 'block';
-            document.getElementById('errorResult').style.display = 'none';
-            
-            document.getElementById('generatedToken').textContent = data.token;
-            
-            // Show token details
-            const details = {
-                id: data.id,
-                token: data.token,
-                note: data.note,
-                scopes: data.scopes,
-                created: data.created,
-                expires: data.expires || 'Never'
-            };
-            
-            document.getElementById('tokenDetails').textContent = JSON.stringify(details, null, 2);
-            
-            // Update step indicator
-            document.getElementById('step3').classList.add('completed');
-            
-            // Scroll to results
-            document.getElementById('resultSection').scrollIntoView({ behavior: 'smooth' });
-        }
-
-        function showError(errorMessage) {
-            document.getElementById('resultSection').style.display = 'block';
-            document.getElementById('successResult').style.display = 'none';
-            document.getElementById('errorResult').style.display = 'block';
-            
-            let errorHtml = `<p class="mb-2">${errorMessage}</p>`;
-            
-            // Add specific error guidance
-            if (errorMessage.includes('401') || errorMessage.includes('Unauthorized')) {
-                errorHtml += `
-                    <div class="mt-3">
-                        <h6>Possible causes:</h6>
-                        <ul>
-                            <li>Your master token doesn't have the <code>tokens:write</code> scope</li>
-                            <li>The master token is invalid or expired</li>
-                            <li>The username doesn't match the token owner</li>
-                        </ul>
-                        <p class="mb-0 mt-3">
-                            <a href="https://account.mapbox.com/access-tokens/" target="_blank" class="btn btn-sm btn-outline-danger">
-                                Create a new master token with tokens:write scope
-                            </a>
-                        </p>
-                    </div>
-                `;
             }
             
-            document.getElementById('errorMessage').innerHTML = errorHtml;
-            
-            // Scroll to results
-            document.getElementById('resultSection').scrollIntoView({ behavior: 'smooth' });
-        }
-
-        function copyToken() {
-            const tokenText = document.getElementById('generatedToken').textContent;
-            navigator.clipboard.writeText(tokenText).then(() => {
-                const btn = document.querySelector('.copy-button');
-                btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
-                btn.classList.add('copied');
-                
-                setTimeout(() => {
-                    btn.innerHTML = '<i class="fas fa-copy"></i> Copy';
-                    btn.classList.remove('copied');
-                }, 2000);
+            // Enable scope checkboxes interaction
+            document.querySelectorAll('.scope-checkbox').forEach(checkbox => {
+                checkbox.addEventListener('click', function(e) {
+                    if (this.classList.contains('required')) {
+                        e.preventDefault();
+                        tokenGenerator.showNotification('This scope is required and cannot be disabled', 'info');
+                    }
+                });
             });
-        }
-
-        function resetForm() {
-            // Reset UI
-            document.getElementById('resultSection').style.display = 'none';
-            document.getElementById('tokenNote').value = 'NetCDF Converter Token';
             
-            // Reset steps
-            document.getElementById('step1').classList.remove('completed');
-            document.getElementById('step2').classList.remove('completed');
-            document.getElementById('step3').classList.remove('completed', 'active');
-            document.getElementById('step1').classList.add('active');
+            // Check for temporary token from test page
+            const tempToken = sessionStorage.getItem('temp_test_token');
+            const tempUsername = sessionStorage.getItem('temp_test_username');
+            if (tempToken && tempUsername) {
+                document.getElementById('mapboxToken').value = tempToken;
+                document.getElementById('mapboxUsername').value = tempUsername;
+                sessionStorage.removeItem('temp_test_token');
+                sessionStorage.removeItem('temp_test_username');
+            }
             
-            // Scroll to top
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-        }
-
-        // Enable/disable checkboxes for required scopes
-        document.querySelectorAll('.scope-checkbox.required input').forEach(checkbox => {
-            checkbox.onclick = function() { return false; };
+            // Add enter key support
+            document.getElementById('masterToken').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    generateToken();
+                }
+            });
+            
+            document.getElementById('username').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    generateToken();
+                }
+            });
+            
+            // Enable/disable checkboxes for required scopes
+            document.querySelectorAll('.scope-checkbox.required input').forEach(checkbox => {
+                checkbox.onclick = function() { return false; };
+            });
         });
     </script>
 </body>

@@ -4,6 +4,7 @@ uvicorn[standard]==0.24.0
 python-multipart==0.0.6
 jinja2==3.1.2
 websockets==12.0
+aiofiles==23.2.1
 
 # NetCDF and geospatial
 xarray==2023.12.0
@@ -23,11 +24,13 @@ scipy==1.11.4
 # Visualization
 matplotlib==3.7.2
 pillow==10.1.0
+imageio==2.31.6
 
-# Utilities
+# HTTP requests
 requests==2.31.0
+
+# Environment configuration
 python-dotenv==1.0.0
-aiofiles==23.2.1
 
 # CLI support
 click==8.1.7
